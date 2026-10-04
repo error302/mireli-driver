@@ -29,16 +29,16 @@ class JourneyUiTest {
         screenshot("today")
         rule.onNodeWithText("SGR-1042", substring = true).performScrollTo().performClick()
         click("Accept assignment")
-        rule.onNodeWithText("Confirm", exact = true).performClick()
+        rule.onNodeWithText("Confirm").performClick()
         waitFor("I have arrived")
         click("I have arrived")
-        rule.onNodeWithText("Confirm", exact = true).performClick()
+        rule.onNodeWithText("Confirm").performClick()
         waitFor("Passenger manifest")
         screenshot("manifest")
         listOf("1042", "2042", "3042").forEach { code ->
             rule.onAllNodesWithText("Board party").onFirst().performScrollTo().performClick()
             rule.onNodeWithText("Boarding code").performTextInput(code)
-            rule.onNodeWithText("Confirm boarding", exact = true).let {
+            rule.onNodeWithText("Confirm boarding").let {
                 rule.onAllNodesWithText("Confirm boarding").onLast().performClick()
             }
             rule.waitUntil(15000) {
@@ -46,11 +46,11 @@ class JourneyUiTest {
             }
         }
         click("Start journey")
-        rule.onNodeWithText("Confirm", exact = true).performClick()
+        rule.onNodeWithText("Confirm").performClick()
         waitFor("Complete journey")
         screenshot("active-trip")
         click("Complete journey")
-        rule.onNodeWithText("Confirm", exact = true).performClick()
+        rule.onNodeWithText("Confirm").performClick()
         waitFor("Journey complete. Your preview history is saved.")
         rule.onNodeWithContentDescription("Back").performClick()
         rule.onNodeWithText("Earnings", useUnmergedTree = true).performClick()
