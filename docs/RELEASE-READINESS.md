@@ -53,4 +53,3 @@ and the checked-in Gradle wrapper.
 
 Production release is unsigned and intentionally unconnected. Do not submit it.
 Never sign production with the debug key. Store upload credentials outside Git.
-

@@ -32,4 +32,3 @@ object MireliIcons {
     ).addPath(pathData = addPathNodes(path), fill = null, stroke = SolidColor(Color.Black),
         strokeLineWidth = 1.7f, strokeLineCap = StrokeCap.Round, strokeLineJoin = StrokeJoin.Round).build()
 }
-

@@ -8,4 +8,3 @@ interface DriverRepository {
     suspend fun execute(tripId: String, expectedVersion: Int, commandId: String, command: TripCommand): Change
     suspend fun reset()
 }
-

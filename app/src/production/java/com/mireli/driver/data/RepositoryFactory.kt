@@ -15,4 +15,3 @@ private class UnconfiguredRepository : DriverRepository {
         Change.Rejected("Your organization connection is not configured.")
     override suspend fun reset() = Unit
 }
-

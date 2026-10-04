@@ -14,4 +14,3 @@ restrained dimensional highlights, original geometry, no mockup or watermark.
 The full prompt is reflected in this specification; raster dimensions may
 differ from the requested 1024 square. Generate/validate store and launcher
 exports against current platform requirements before publication.
-

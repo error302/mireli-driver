@@ -15,4 +15,3 @@ class PreviewTest {
         rule.onNodeWithText("Payouts are not connected").assertIsDisplayed()
     }
 }
-

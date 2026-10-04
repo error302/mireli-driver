@@ -1,8 +1,8 @@
 # Mireli Driver — product, engineering, compliance and release master plan
 
-**Prepared:** 1 October 2026  
-**Status:** Implementation blueprint; no application has been built or certified by this document.  
-**Audience:** Mireli owner, Android and web developers, designer, dispatch team, QA, accountant and Kenyan legal adviser.  
+**Prepared:** 1 October 2026
+**Status:** Implementation blueprint; no application has been built or certified by this document.
+**Audience:** Mireli owner, Android and web developers, designer, dispatch team, QA, accountant and Kenyan legal adviser.
 **Objective:** Build and operate an Android driver app connected to the existing Mireli passenger website, supporting individual seat reservations and private charters for the Mombasa SGR travel niche, then release it through Google Play with documented operational and compliance readiness.
 
 ## 1. What we know, what we assume, and the main recommendation
