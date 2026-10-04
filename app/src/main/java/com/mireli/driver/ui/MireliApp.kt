@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -64,6 +65,8 @@ fun MireliApp(vm: DriverViewModel = viewModel()) {
     var help by rememberSaveable { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val selected = trips.find { it.id == selectedId }
+    val listState = rememberLazyListState()
+    LaunchedEffect(tab, selectedId, selected?.stage) { listState.scrollToItem(0) }
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.dismissMessage() } }
     BackHandler(selectedId != null) { selectedId = null }
     MaterialTheme(colorScheme = Palette, shapes = Shapes(
@@ -85,6 +88,7 @@ fun MireliApp(vm: DriverViewModel = viewModel()) {
                 }
             }) { padding ->
             LazyColumn(Modifier.fillMaxSize().padding(padding),
+                state = listState,
                 contentPadding = PaddingValues(horizontal = 22.dp, vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp)) {
                 item {

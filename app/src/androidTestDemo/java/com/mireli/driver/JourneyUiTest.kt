@@ -10,7 +10,10 @@ import java.io.File
 
 class JourneyUiTest {
     @get:Rule val rule = createAndroidComposeRule<MainActivity>()
-    private fun click(text: String) { rule.onNodeWithText(text).performScrollTo().performClick() }
+    private fun reveal(text: String, substring: Boolean = false) {
+        rule.onNode(hasScrollAction()).performScrollToNode(hasText(text, substring = substring))
+    }
+    private fun click(text: String) { reveal(text); rule.onNodeWithText(text).performClick() }
     private fun waitFor(text: String) {
         rule.waitUntil(15000) { rule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty() }
     }
@@ -27,15 +30,17 @@ class JourneyUiTest {
         waitFor("Preview trips reset")
         rule.onNodeWithText("Today", useUnmergedTree = true).performClick()
         screenshot("today")
-        rule.onNodeWithText("SGR-1042", substring = true).performScrollTo().performClick()
+        reveal("SGR-1042", substring = true)
+        rule.onNodeWithText("SGR-1042", substring = true).performClick()
         click("Accept assignment")
         rule.onNodeWithText("Confirm").performClick()
-        waitFor("I have arrived")
+        rule.waitForIdle()
         click("I have arrived")
         rule.onNodeWithText("Confirm").performClick()
-        waitFor("Passenger manifest")
+        reveal("Passenger manifest")
         screenshot("manifest")
         listOf("1042", "2042", "3042").forEach { code ->
+            reveal("Sample boarding code: " + code)
             rule.onAllNodesWithText("Board party").onFirst().performScrollTo().performClick()
             rule.onNodeWithText("Boarding code").performTextInput(code)
             rule.onNodeWithText("Confirm boarding").let {
@@ -47,11 +52,12 @@ class JourneyUiTest {
         }
         click("Start journey")
         rule.onNodeWithText("Confirm").performClick()
-        waitFor("Complete journey")
+        reveal("Complete journey")
         screenshot("active-trip")
         click("Complete journey")
         rule.onNodeWithText("Confirm").performClick()
-        waitFor("Journey complete. Your preview history is saved.")
+        reveal("Journey complete. Your preview history is saved.")
+        rule.onNode(hasScrollAction()).performScrollToIndex(0)
         rule.onNodeWithContentDescription("Back").performClick()
         rule.onNodeWithText("Earnings", useUnmergedTree = true).performClick()
         rule.onAllNodesWithText("KSh 4,200", substring = true).onFirst().assertExists()
