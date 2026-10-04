@@ -17,6 +17,10 @@ class JourneyUiTest {
     private fun waitFor(text: String) {
         rule.waitUntil(15000) { rule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty() }
     }
+    private fun awaitSaved() {
+        waitFor("Preview updated")
+        rule.waitUntil(15000) { rule.onAllNodesWithText("Preview updated").fetchSemanticsNodes().isEmpty() }
+    }
     private fun screenshot(name: String) {
         rule.waitForIdle()
         val dir = File(rule.activity.getExternalFilesDir(null), "screenshots").apply { mkdirs() }
@@ -28,15 +32,18 @@ class JourneyUiTest {
         rule.onNodeWithText("Account", useUnmergedTree = true).performClick()
         click("Reset sample trips")
         waitFor("Preview trips reset")
+        rule.waitUntil(15000) { rule.onAllNodesWithText("Preview trips reset").fetchSemanticsNodes().isEmpty() }
         rule.onNodeWithText("Today", useUnmergedTree = true).performClick()
         screenshot("today")
         reveal("SGR-1042", substring = true)
         rule.onNodeWithText("SGR-1042", substring = true).performClick()
         click("Accept assignment")
+        waitFor("Confirm")
         rule.onNodeWithText("Confirm").performClick()
-        rule.waitForIdle()
+        awaitSaved()
         click("I have arrived")
         rule.onNodeWithText("Confirm").performClick()
+        awaitSaved()
         reveal("Passenger manifest")
         screenshot("manifest")
         listOf("1042", "2042", "3042").forEach { code ->
@@ -46,16 +53,19 @@ class JourneyUiTest {
             rule.onNodeWithText("Confirm boarding").let {
                 rule.onAllNodesWithText("Confirm boarding").onLast().performClick()
             }
+            awaitSaved()
             rule.waitUntil(15000) {
                 rule.onAllNodesWithText("Sample boarding code: " + code).fetchSemanticsNodes().isEmpty()
             }
         }
         click("Start journey")
         rule.onNodeWithText("Confirm").performClick()
+        awaitSaved()
         reveal("Complete journey")
         screenshot("active-trip")
         click("Complete journey")
         rule.onNodeWithText("Confirm").performClick()
+        awaitSaved()
         reveal("Journey complete. Your preview history is saved.")
         rule.onNode(hasScrollAction()).performScrollToIndex(0)
         rule.onNodeWithContentDescription("Back").performClick()

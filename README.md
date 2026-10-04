@@ -50,6 +50,7 @@ Demo idempotency memory is session-local and is not a production offline outbox.
 - [Full product and release plan](MIRELI-DRIVER-MASTER-PLAN.md)
 - [Website integration findings](docs/WEB-INTEGRATION.md)
 - [Release blockers and performance work](docs/RELEASE-READINESS.md)
+- [Build validation and test limits](docs/BUILD-VALIDATION.md)
 - [Brand provenance](assets/brand/README.md)
 
 The permanent application ID, privacy/terms, business verification, backend,
