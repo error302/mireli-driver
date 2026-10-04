@@ -1,0 +1,46 @@
+package com.mireli.driver
+
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.mireli.driver.data.RepositoryFactory
+import com.mireli.driver.domain.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import java.util.UUID
+
+class DriverViewModel(application: Application) : AndroidViewModel(application) {
+    private val repository = RepositoryFactory.create(application)
+    val trips = repository.trips
+    private val _busy = MutableStateFlow(false)
+    val busy = _busy.asStateFlow()
+    private val _message = MutableStateFlow<String?>(null)
+    val message = _message.asStateFlow()
+    fun dismissMessage() { _message.value = null }
+    fun command(trip: Trip, command: TripCommand) {
+        if (_busy.value) return
+        _busy.value = true
+        viewModelScope.launch {
+            try {
+                when (val result = repository.execute(trip.id, trip.version, UUID.randomUUID().toString(), command)) {
+                    is Change.Applied -> _message.value = "Preview updated"
+                    is Change.Rejected -> _message.value = result.reason
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { _message.value = "Unable to save. Please try again." }
+            finally { _busy.value = false }
+        }
+    }
+    fun reset() {
+        if (_busy.value) return
+        _busy.value = true
+        viewModelScope.launch {
+            try { repository.reset(); _message.value = "Preview trips reset" }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { _message.value = "Unable to reset. Please try again." }
+            finally { _busy.value = false }
+        }
+    }
+}
