@@ -3,6 +3,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -17,6 +18,10 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.font.FontWeight
+import kotlinx.coroutines.delay
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mireli.driver.BuildConfig
@@ -33,6 +38,8 @@ private fun JSONArray.objects()=(0 until length()).map {getJSONObject(it)}
     var supportCategory by rememberSaveable {mutableStateOf("payout")};var supportMessage by rememberSaveable {mutableStateOf("")}
     var payoutName by rememberSaveable {mutableStateOf("")};var payoutAcknowledged by rememberSaveable {mutableStateOf(false)}
     var tripHistory by rememberSaveable {mutableStateOf(false)}
+    var clock by remember {mutableLongStateOf(System.currentTimeMillis())}
+    LaunchedEffect(state.challengeId,state.resendAt){code="";while(state.challengeId!=null&&clock<state.resendAt){clock=System.currentTimeMillis();delay(1000)};clock=System.currentTimeMillis()}
     var selectedType by rememberSaveable {mutableStateOf<String?>(null)};var selectedExpiry by rememberSaveable {mutableStateOf("")}
     val uriHandler=LocalUriHandler.current
     val listState=rememberLazyListState();val focus=LocalFocusManager.current;val keyboard=LocalSoftwareKeyboardController.current
@@ -47,20 +54,32 @@ private fun JSONArray.objects()=(0 until length()).map {getJSONObject(it)}
         NavigationBarItem(section==2,{section=2},icon={Icon(MireliIcons.HeadsetMic,null)},label={Text("Support")})
     }}){padding->
         LazyColumn(Modifier.fillMaxSize().padding(padding).imePadding(),state=listState,contentPadding=PaddingValues(22.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
-            item {Row(horizontalArrangement=Arrangement.spacedBy(12.dp)){Image(painterResource(R.drawable.mireli_driver_logo),"Mireli",Modifier.size(44.dp));Column{Text("Mireli Driver",style=MaterialTheme.typography.headlineMedium);Text(if(state.signedIn)"Your driver account" else "Sign in or apply to drive",style=MaterialTheme.typography.bodyMedium)}}}
-            item {AppearanceButton()}
+            item {Row(horizontalArrangement=Arrangement.spacedBy(12.dp),verticalAlignment=Alignment.CenterVertically){Image(painterResource(R.drawable.mireli_driver_logo),"Mireli",Modifier.size(48.dp));Column{Text("Mireli Driver",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Bold);Text(if(state.signedIn)"Your driver account" else "Sign in or apply to drive",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)}}}
+            item {AppearanceToggle()}
             if(onClose!=null)item {TextButton(onClick=onClose){Text("Back to preview")}}
             if(BuildConfig.DRIVER_SERVICE_TEST)item {Card {Text("STAGING · Test data; no real SMS or payouts.",Modifier.padding(16.dp))}}
             if(state.loading)item {LinearProgressIndicator(Modifier.fillMaxWidth())}
-            state.error?.let {error->item {Text(error,color=MaterialTheme.colorScheme.error)} }
+            state.error?.takeIf{state.signedIn||state.registrationOpen==true}?.let {error->item {Card(colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.errorContainer)){Text(error,Modifier.padding(16.dp),color=MaterialTheme.colorScheme.onErrorContainer)}} }
             if(!state.signedIn) {
-                item {OutlinedTextField(phone,{phone=it.take(20)},label={Text("Kenyan mobile number")},singleLine=true,enabled=!state.loading&&state.challengeId==null,modifier=Modifier.fillMaxWidth())}
-                item {Button(onClick={vm.requestCode(phone)},enabled=!state.loading&&phone.isNotBlank(),modifier=Modifier.fillMaxWidth()){Text("Send verification code")}}
+                item {Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface)){Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
+                    Icon(MireliIcons.Train,null,tint=MaterialTheme.colorScheme.primary,modifier=Modifier.size(30.dp))
+                    Text("Your next chapter starts here.",style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.SemiBold)
+                    Text("Drive SGR transfers across Mombasa. Create your driver account, complete your documents and receive assignments once approved.",color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("1  Verify phone    ·    2  Submit documents    ·    3  Get approved",style=MaterialTheme.typography.bodySmall)
+                }}}
+                if(!state.loading&&state.registrationOpen!=true)item {Card(Modifier.fillMaxWidth()){Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
+                    Text("Driver registration is not open yet",style=MaterialTheme.typography.titleMedium)
+                    Text(state.error?:"Check again shortly, or contact Mireli for help. Your account is created only after phone verification.")
+                    OutlinedButton(onClick=vm::refreshServiceStatus){Text("Check availability")}
+                }}}
+                item {OutlinedTextField(phone,{phone=it.take(20)},label={Text("Kenyan mobile number")},placeholder={Text("07XX XXX XXX")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Phone),singleLine=true,enabled=!state.loading&&state.challengeId==null,modifier=Modifier.fillMaxWidth())}
+                if(state.challengeId==null)item {Button(onClick={vm.requestCode(phone)},enabled=!state.loading&&state.registrationOpen==true&&phone.isNotBlank(),modifier=Modifier.fillMaxWidth().heightIn(min=52.dp)){Text("Send verification code")}}
                 if(state.challengeId!=null) {
                     item {Text("Code requested for ${state.challengePhone}");TextButton(onClick={vm.changePhone();code=""},enabled=!state.loading){Text("Use a different number")}}
                     state.demoCode?.let {sample->item {Text("Sample verification code: $sample")}}
-                    item {OutlinedTextField(code,{code=it.filter(Char::isDigit).take(6)},label={Text("6-digit verification code")},singleLine=true,enabled=!state.loading,modifier=Modifier.fillMaxWidth())}
+                    item {OutlinedTextField(code,{code=it.filter(Char::isDigit).take(6)},label={Text("6-digit verification code")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.NumberPassword),singleLine=true,enabled=!state.loading,modifier=Modifier.fillMaxWidth())}
                     item {Button(onClick={vm.verifyCode(code)},enabled=!state.loading&&code.length==6,modifier=Modifier.fillMaxWidth()){Text("Verify and continue")}}
+                    item {TextButton(onClick={vm.requestCode(state.challengePhone?:phone)},enabled=!state.loading&&clock>=state.resendAt){Text(if(clock<state.resendAt)"Resend in ${((state.resendAt-clock+999)/1000).coerceAtLeast(0)}s" else "Resend verification code")}}
                 }
                 item {Text("Your phone verifies access to your account. Your documents and vehicle still require compliance approval before you can take real work.")}
                 item {Text("Account help: mirelisgr001@gmail.com. Do not email identity documents.",style=MaterialTheme.typography.bodySmall)}
@@ -129,7 +148,12 @@ private fun JSONArray.objects()=(0 until length()).map {getJSONObject(it)}
                     items(visibleTrips,key={it.getString("id")}){trip->
                         LiveTripCard(trip,state.loading||state.pendingTripAction,state.eligibility?.optBoolean("eligible")==true,vm::tripCommand)
                     }
-                    if(visibleTrips.isEmpty())item {Text(if(tripHistory)"No recent completed trips." else "No active assignments. Dispatch assignments will appear here when linked to your approved driver account.")}
+                    if(visibleTrips.isEmpty())item {Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface)){Column(Modifier.padding(24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
+                        Icon(MireliIcons.Route,null,tint=MaterialTheme.colorScheme.primary,modifier=Modifier.size(32.dp))
+                        Text(if(tripHistory)"Your journey history starts here" else "Ready for your next assignment",style=MaterialTheme.typography.titleLarge)
+                        Text(if(tripHistory)"Completed trips will appear here." else if(state.eligibility?.optBoolean("eligible")!=true)"Complete onboarding first. Once approved, dispatch will assign your first SGR transfer." else "You have no assigned trips yet. Refresh to check for your next SGR transfer.",color=MaterialTheme.colorScheme.onSurfaceVariant)
+                        if(!tripHistory&&state.eligibility?.optBoolean("eligible")!=true)OutlinedButton(onClick={section=0}){Text("Continue onboarding")}
+                    }}}
                 }else if(section==2) {
                     item {Text("Driver support",style=MaterialTheme.typography.titleLarge);Text("Create a case for a document, account or payout issue. This is not an emergency channel; contact local emergency services directly if immediate help is needed.")}
                     if(state.supportSent>0)item {Text("Support case sent. Mireli's replies appear below.",color=MaterialTheme.colorScheme.primary)}

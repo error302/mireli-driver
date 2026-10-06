@@ -209,7 +209,7 @@ fun MireliApp(vm: DriverViewModel = viewModel()) {
                                 }
                             }
                         }
-                        item { InfoCard(MireliIcons.PhoneAndroid, "App version", "0.3.1 · Native Android test build") }
+                        item { InfoCard(MireliIcons.PhoneAndroid, "App version", "${com.mireli.driver.BuildConfig.VERSION_NAME} · Native Android test build") }
                         item { OutlinedButton(onClick = vm::reset, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Reset sample trips") } }
                     }
                 }

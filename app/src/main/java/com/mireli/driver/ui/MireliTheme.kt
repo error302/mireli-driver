@@ -16,6 +16,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import com.mireli.driver.R
 import kotlinx.coroutines.Dispatchers
@@ -24,7 +26,7 @@ import kotlinx.coroutines.withContext
 
 enum class ThemeMode(val label:Int) {
     SYSTEM(R.string.theme_system), LIGHT(R.string.theme_light), DARK(R.string.theme_dark);
-    companion object {fun from(value:String?)=entries.firstOrNull{it.name==value}?:SYSTEM}
+    companion object {fun from(value:String?)=entries.firstOrNull{it.name==value}?:LIGHT}
 }
 class ThemePreference(context:Context) {
     private val preferences=context.applicationContext.getSharedPreferences("appearance",Context.MODE_PRIVATE)
@@ -32,7 +34,7 @@ class ThemePreference(context:Context) {
     suspend fun save(mode:ThemeMode)=withContext(Dispatchers.IO){check(preferences.edit().putString("theme_mode",mode.name).commit())}
 }
 private val LightColors=lightColorScheme(
-    primary=Color(0xFF007C76),onPrimary=Color.White,primaryContainer=Color(0xFFE5F2EF),onPrimaryContainer=Color(0xFF063555),
+    primary=Color(0xFF007F79),onPrimary=Color.White,primaryContainer=Color(0xFFE5F2EF),onPrimaryContainer=Color(0xFF063555),
     secondary=Color(0xFF063555),onSecondary=Color.White,secondaryContainer=Color(0xFFDDF2EE),onSecondaryContainer=Color(0xFF063555),
     background=Color(0xFFF3F5F8),onBackground=Color(0xFF142D40),surface=Color.White,onSurface=Color(0xFF142D40),
     surfaceVariant=Color(0xFFEAF0F3),onSurfaceVariant=Color(0xFF5A6E7C),surfaceContainer=Color.White,surfaceContainerHighest=Color.White,
@@ -72,6 +74,17 @@ private val LocalAppearance=staticCompositionLocalOf<Appearance>{error("MireliTh
 }
 
 /** Shared control is available before sign-in, during onboarding and in the driver account. */
+@Composable fun AppearanceToggle() {
+    val appearance=LocalAppearance.current
+    val dark=when(appearance.mode){ThemeMode.SYSTEM->isSystemInDarkTheme();ThemeMode.DARK->true;ThemeMode.LIGHT->false}
+    Row(Modifier.fillMaxWidth(),verticalAlignment=androidx.compose.ui.Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+        Text("Dark mode",Modifier.weight(1f),style=MaterialTheme.typography.bodyMedium)
+        Switch(checked=dark,onCheckedChange={appearance.select(if(it)ThemeMode.DARK else ThemeMode.LIGHT)},enabled=!appearance.saving,
+            modifier=Modifier.semantics{contentDescription="Dark mode"})
+        AppearanceButton()
+    }
+}
+
 @Composable fun AppearanceButton() {
     var open by rememberSaveable{mutableStateOf(false)}
     val appearance=LocalAppearance.current

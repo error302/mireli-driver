@@ -36,14 +36,7 @@ import java.time.format.DateTimeFormatter
         }
         if(phase=="accepted")Button(onClick={action="arrive"},enabled=canAct,modifier=Modifier.fillMaxWidth()){Text("Arrived at pickup")}
         if(phase in listOf("accepted","at_pickup","in_progress")) {
-            val stages=trip.getJSONArray("stages")
-            if(stages.length()>0) {
-                val stage=stages.getJSONObject(if(trip.getString("direction")=="FROM_TERMINUS")0 else stages.length()-1)
-                val lat=stage.getDouble("latitude");val lng=stage.getDouble("longitude")
-                if(lat.isFinite()&&lng.isFinite()&&lat in -90.0..90.0&&lng in -180.0..180.0)TextButton(onClick={
-                    runCatching{context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lng")))}
-                }){Text("Open route pickup map")}
-            }
+            TripNavigation(trip)
             TextButton(onClick={expanded=!expanded}){Text(if(expanded)"Hide manifest" else "View passenger manifest")}
         }
         if(expanded)for(index in 0 until passengers.length()) {
@@ -52,7 +45,10 @@ import java.time.format.DateTimeFormatter
             Text("${p.getString("name")} · ${p.getInt("seats")} seats",style=MaterialTheme.typography.titleMedium)
             Text("${p.getInt("boarded")} boarded · ${p.getInt("noShow")} no-show · ${p.getInt("remaining")} waiting")
             p.optString("stageName").takeIf{it.isNotBlank()&&it!="null"}?.let{Text("Stage: $it")}
-            p.optString("homeAddress").takeIf{it.isNotBlank()&&it!="null"}?.let{Text("Pickup: $it")}
+            p.optString("homeAddress").takeIf{it.isNotBlank()&&it!="null"}?.let{address->
+                Text("${if(trip.getString("direction")=="TO_TERMINUS")"Pickup" else "Drop-off"}: $address")
+                PassengerAddressMap(address)
+            }
             p.optString("phone").takeIf{Regex("\\+?254[17][0-9]{8}").matches(it)}?.let{phone->
                 TextButton(onClick={runCatching{context.startActivity(Intent(Intent.ACTION_DIAL,Uri.parse("tel:$phone")))}}){Text("Call passenger")}
             }

@@ -23,11 +23,11 @@ jobs:
           log-accepted-android-sdk-licenses: false
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x gradlew
-      - run: ./gradlew :app:testDemoDebugUnitTest :app:lintDemoDebug :app:assembleDemoDebug :app:assembleProductionRelease :app:assembleDemoDebugAndroidTest :app:assembleStagingDebug :app:assembleStagingDebugAndroidTest --no-daemon
+      - run: ./gradlew :app:testPilotDebugUnitTest :app:lintPilotDebug :app:assemblePilotDebug :app:assemblePilotDebugAndroidTest :app:assembleProductionRelease :app:assembleDemoDebugAndroidTest :app:assembleStagingDebug :app:assembleStagingDebugAndroidTest --no-daemon
       - uses: actions/upload-artifact@v4
         with:
-          name: mireli-preview-apk
-          path: app/build/outputs/apk/demo/debug/*.apk
+          name: mireli-fresh-pilot-apk
+          path: app/build/outputs/apk/pilot/debug/*.apk
       - uses: actions/upload-artifact@v4
         if: always()
         with:
