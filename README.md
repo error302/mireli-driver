@@ -5,9 +5,13 @@ Kotlin, Jetpack Compose, Android API 36 target, API 26 minimum.
 
 ## Current status
 
-**0.1.0 is a working synthetic preview, not a live service or Play-ready release.**
+**0.2.0 is a working test build, not a live service or Play-ready release.**
 It includes Today, Trips, assignment details, boarding/no-show confirmation,
-trip progression, sample earnings and account readiness screens. Sample progress
+trip progression, partial-party boarding, assignment decline reasons, shared/charter
+sample earnings and driver onboarding screens. The onboarding flow saves encrypted
+document drafts locally, checks expiry/completeness and supports deleting its copies.
+It does not upload documents, verify a phone, submit an application or approve a driver.
+Sample progress
 is saved across restarts. Production builds contain no demo repository and block
 live operations until the existing website backend is connected.
 
@@ -43,12 +47,16 @@ unsigned and unconnected; do not submit it to Play.
 
 The demo never performs payments, collects identity documents or tracks location.
 Client rules provide feedback; the live backend must enforce every rule again.
-Demo idempotency memory is session-local and is not a production offline outbox.
+The demo now persists command IDs, receipts and pending boarding in SQLite. Account
+offers an offline simulator; queued boarding is not counted until sample sync confirms
+it. This is a local test authority, not a production network outbox or WorkManager service.
 
 ## Project documents
 
 - [Full product and release plan](MIRELI-DRIVER-MASTER-PLAN.md)
 - [Website integration findings](docs/WEB-INTEGRATION.md)
+- [Cofounder driver comparison and adoption plan](docs/COFOUNDER-DRIVER-COMPARISON.md)
+- [Version 0.2 test guide and production blockers](docs/TEST-BUILD-0.2.md)
 - [Release blockers and performance work](docs/RELEASE-READINESS.md)
 - [Build validation and test limits](docs/BUILD-VALIDATION.md)
 - [Brand provenance](assets/brand/README.md)

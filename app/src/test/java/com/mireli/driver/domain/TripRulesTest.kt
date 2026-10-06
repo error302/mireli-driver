@@ -4,6 +4,35 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class TripRulesTest {
+    @Test fun partialBoardingLeavesRemainderUnresolved() {
+        val t = changed(trip(TripStage.AT_PICKUP), TripCommand.Board("p", "1234", 1))
+        assertEquals(1, t.boardedSeats)
+        assertEquals(1, t.passengers.single().unresolvedSeats)
+        assertTrue(TripRules.apply(t, t.version, TripCommand.Start) is Change.Rejected)
+    }
+    @Test fun remainingNoShowDoesNotUndoBoardedSeats() {
+        var t = changed(trip(TripStage.AT_PICKUP), TripCommand.Board("p", "1234", 1))
+        t = changed(t, TripCommand.MarkNoShow("p"))
+        assertEquals(1, t.boardedSeats)
+        assertEquals(1, t.passengers.single().noShowCount)
+        assertEquals(TripStage.IN_PROGRESS, changed(t, TripCommand.Start).stage)
+    }
+    @Test fun cannotBoardMoreThanRemainingOrZero() {
+        listOf(0, -1, 3, Int.MAX_VALUE).forEach { count ->
+            assertTrue(TripRules.apply(trip(TripStage.AT_PICKUP), 0, TripCommand.Board("p", "1234", count)) is Change.Rejected)
+        }
+    }
+    @Test fun declineRequiresReasonAndCannotBeAcceptedAfterwards() {
+        assertTrue(TripRules.apply(trip(), 0, TripCommand.Decline("")) is Change.Rejected)
+        val declined = changed(trip(), TripCommand.Decline("Vehicle breakdown"))
+        assertEquals(AssignmentState.DECLINED, declined.assignment)
+        assertTrue(TripRules.apply(declined, declined.version, TripCommand.Accept) is Change.Rejected)
+    }
+    @Test fun revokedAndExpiredAssignmentsRejectAllCommands() {
+        listOf(AssignmentState.WITHDRAWN, AssignmentState.EXPIRED).forEach { state ->
+            assertTrue(TripRules.apply(trip().copy(assignment = state), 0, TripCommand.Accept) is Change.Rejected)
+        }
+    }
     private fun trip(stage: TripStage = TripStage.ASSIGNED, people: List<Passenger> = listOf(Passenger("p", "Sample", 2, "1234"))) =
         Trip("t", "SGR", "Nyali", "14:10", ServiceType.SHARED, "Sample vehicle", 4, 80000, people, stage)
     private fun changed(t: Trip, c: TripCommand) = (TripRules.apply(t, t.version, c) as Change.Applied).trip

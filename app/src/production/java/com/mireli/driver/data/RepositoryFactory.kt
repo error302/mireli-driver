@@ -11,6 +11,10 @@ object RepositoryFactory {
 }
 private class UnconfiguredRepository : DriverRepository {
     override val trips = MutableStateFlow<List<Trip>>(emptyList())
+    override val pendingCount = MutableStateFlow(0)
+    override val connected = MutableStateFlow(false)
+    override val syncMessage = MutableStateFlow<String?>(null)
+    override suspend fun setConnected(value: Boolean) = Unit
     override suspend fun execute(tripId: String, expectedVersion: Int, commandId: String, command: TripCommand): Change =
         Change.Rejected("Your organization connection is not configured.")
     override suspend fun reset() = Unit

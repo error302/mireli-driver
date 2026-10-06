@@ -60,9 +60,13 @@ fun MireliApp(vm: DriverViewModel = viewModel()) {
     val trips by vm.trips.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
+    val connected by vm.connected.collectAsStateWithLifecycle()
+    val pendingCount by vm.pendingCount.collectAsStateWithLifecycle()
+    val syncMessage by vm.syncMessage.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
     var help by rememberSaveable { mutableStateOf(false) }
+    var onboarding by rememberSaveable { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val selected = trips.find { it.id == selectedId }
     val listState = rememberLazyListState()
@@ -73,6 +77,10 @@ fun MireliApp(vm: DriverViewModel = viewModel()) {
         small = RoundedCornerShape(12.dp), medium = RoundedCornerShape(20.dp), large = RoundedCornerShape(28.dp))) {
         if (!RepositoryFactory.isDemo) {
             ConnectionRequired()
+            return@MaterialTheme
+        }
+        if (onboarding) {
+            OnboardingScreen(onClose = { onboarding = false })
             return@MaterialTheme
         }
         Scaffold(containerColor = Mist, snackbarHost = { SnackbarHost(snackbar) },
@@ -115,35 +123,46 @@ fun MireliApp(vm: DriverViewModel = viewModel()) {
                             color = Navy, style = MaterialTheme.typography.labelMedium)
                     }
                 }
+                if (!connected || pendingCount > 0 || syncMessage != null) item {
+                    Card {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(if (pendingCount > 0) "$pendingCount action waiting to sync · not confirmed" else if (!connected) "Offline simulation" else "Sync result", fontWeight = FontWeight.Bold)
+                            Text(syncMessage ?: "Only boarding can be saved while the local simulator is offline. Accepting, starting and completing need confirmation.")
+                            if (!connected) Button(onClick = { vm.setConnected(true) }, enabled = !busy) { Text("Resume sample sync") }
+                        }
+                    }
+                }
                 if (selected != null) {
-                    item { Heading(selected.id, selected.stage.label()) }
+                    item { Heading(selected.id, if (selected.actionable) selected.stage.label() else selected.assignment.name.lowercase().replaceFirstChar { it.uppercase() }) }
+                    if (!selected.actionable) item { InfoCard(MireliIcons.Info, "Assignment unavailable", selected.declineReason ?: "Dispatch has changed this assignment.") }
                     item { RouteCard(selected) }
                     item { ProgressCard(selected) }
                     if (selected.stage == TripStage.AT_PICKUP) {
                         item { Heading("Passenger manifest", selected.boardedSeats.toString() + " of " + selected.bookedSeats + " passengers boarded") }
                         items(selected.passengers, key = { it.id }) { passenger ->
-                            PassengerCard(passenger, busy) { vm.command(selected, it) }
+                            PassengerCard(passenger, busy || pendingCount > 0) { vm.command(selected, it) }
                         }
                     } else item {
                         InfoCard(MireliIcons.Groups, selected.bookedSeats.toString() + " passengers",
                             if (selected.stage == TripStage.COMPLETED) "Journey complete. Your preview history is saved."
                             else "The passenger manifest opens when you arrive at pickup.")
                     }
-                    item { TripAction(selected, busy) { vm.command(selected, it) } }
+                    item { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) { TripAction(selected, busy || pendingCount > 0) { vm.command(selected, it) } } }
                     item { InfoCard(MireliIcons.Info, "Preview journey",
                         "GPS, dispatch contact, identity verification and live payments are not connected.") }
                 } else when (tab) {
                     0 -> {
                         item { Heading("A good day to drive.", "Your Mombasa SGR schedule, at a glance.") }
                         item { InfoCard(MireliIcons.VerifiedUser, "Driver preview", "Explore the journey before going live.") }
+                        item { Button(onClick = { onboarding = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Start driver onboarding") } }
                         item {
                             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Stat("Scheduled", trips.count { it.stage != TripStage.COMPLETED }.toString(), Modifier.weight(1f))
+                                Stat("Scheduled", trips.count { it.actionable && it.stage != TripStage.COMPLETED }.toString(), Modifier.weight(1f))
                                 Stat("Completed", trips.count { it.stage == TripStage.COMPLETED }.toString(), Modifier.weight(1f))
                             }
                         }
                         item { SectionTitle("Your next journey", "SGR TRANSFERS") }
-                        val next = trips.firstOrNull { it.stage != TripStage.COMPLETED }
+                        val next = trips.firstOrNull { it.actionable && it.stage != TripStage.COMPLETED }
                         if (next != null) item { JourneyCard(next) { selectedId = next.id } }
                         else item { InfoCard(MireliIcons.CheckCircleOutline, "All journeys completed", "Reset sample trips from Account to try again.") }
                         item { InfoCard(MireliIcons.Train, "Built around the train", "Check your reporting time and agreed meeting point before every departure.") }
@@ -165,6 +184,11 @@ fun MireliApp(vm: DriverViewModel = viewModel()) {
                             }
                         }
                         item { InfoCard(MireliIcons.AccountBalance, "Payouts are not connected", "Verified earnings, deductions and M-Pesa settlements must come from Mireli's shared ledger.") }
+                        items(ServiceType.entries) { service ->
+                            val completed = trips.filter { it.stage == TripStage.COMPLETED && it.service == service }
+                            InfoCard(MireliIcons.Route, if (service == ServiceType.SHARED) "Shared transfers" else "Chartered transfers",
+                                "${completed.size} completed · ${completed.sumOf { it.boardedSeats }} passengers · ${money(completed.sumOf { it.fareMinor })} sample gross")
+                        }
                         items(trips.filter { it.stage == TripStage.COMPLETED }, key = { it.id }) { trip ->
                             InfoCard(MireliIcons.CheckCircleOutline, trip.id, money(trip.fareMinor) + " · sample gross fare")
                         }
@@ -173,11 +197,19 @@ fun MireliApp(vm: DriverViewModel = viewModel()) {
                         item { Heading("Your account", "Ready for the road. Built around you.") }
                         item { InfoCard(MireliIcons.PersonOutline, "Preview driver", "This sample identity is not an approved Mireli driver account.") }
                         item { SectionTitle("Driver readiness", "BEFORE LAUNCH") }
-                        item { InfoCard(MireliIcons.Badge, "Identity & driving licence", "Verification integration pending") }
-                        item { InfoCard(MireliIcons.DirectionsCar, "Vehicle & insurance", "Compliance integration pending") }
+                        item { Button(onClick = { onboarding = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Driver onboarding & documents") } }
+                        item { InfoCard(MireliIcons.Badge, "Application checklist", "Driver details, vehicle details, encrypted document drafts and expiry validation. Live submission and review remain unconnected.") }
                         item { InfoCard(MireliIcons.PrivacyTip, "Privacy & account deletion", "Live policies and request service pending") }
                         item { InfoCard(MireliIcons.LocationOn, "Location access", "Not requested in preview") }
-                        item { InfoCard(MireliIcons.PhoneAndroid, "App version", "0.1.0 · Native Android preview") }
+                        item {
+                            Card {
+                                Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) { Text("Simulate offline", fontWeight = FontWeight.SemiBold); Text("Test saved boarding and restart recovery. This controls only the sample authority.", style = MaterialTheme.typography.bodySmall) }
+                                    Switch(checked = !connected, onCheckedChange = { vm.setConnected(!it) }, enabled = !busy)
+                                }
+                            }
+                        }
+                        item { InfoCard(MireliIcons.PhoneAndroid, "App version", "0.2.0 · Native Android test build") }
                         item { OutlinedButton(onClick = vm::reset, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Reset sample trips") } }
                     }
                 }
@@ -223,7 +255,7 @@ fun MireliApp(vm: DriverViewModel = viewModel()) {
             HorizontalDivider(color = Mist)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(trip.stage.label(), fontWeight = FontWeight.Medium)
+                    Text(if (trip.actionable) trip.stage.label() else trip.assignment.name.lowercase().replaceFirstChar { it.uppercase() }, fontWeight = FontWeight.Medium)
                     Text(trip.bookedSeats.toString() + " passengers · " + trip.id, color = Muted, style = MaterialTheme.typography.bodySmall)
                 }
                 Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, "Open trip", tint = Teal)
@@ -278,14 +310,15 @@ fun MireliApp(vm: DriverViewModel = viewModel()) {
     var boardingDialog by rememberSaveable(passenger.id) { mutableStateOf(false) }
     var noShowDialog by rememberSaveable(passenger.id) { mutableStateOf(false) }
     var code by rememberSaveable(passenger.id) { mutableStateOf("") }
+    var count by rememberSaveable(passenger.id) { mutableStateOf("") }
     Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
         Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(passenger.name, fontWeight = FontWeight.SemiBold)
-            Text(passenger.seats.toString() + " passengers · " + passenger.boarding.name.lowercase().replace('_', ' '), color = Muted)
-            if (passenger.boarding == Boarding.WAITING) {
+            Text("${passenger.boardedCount} of ${passenger.seats} boarded · ${passenger.noShowCount} no-show · ${passenger.unresolvedSeats} waiting", color = Muted)
+            if (passenger.unresolvedSeats > 0) {
                 Text("Sample boarding code: " + passenger.code, style = MaterialTheme.typography.bodySmall, color = Teal)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { code = ""; boardingDialog = true }, enabled = !busy) { Text("Board party") }
+                    Button(onClick = { code = ""; count = passenger.unresolvedSeats.toString(); boardingDialog = true }, enabled = !busy) { Text("Board party") }
                     TextButton(onClick = { noShowDialog = true }, enabled = !busy) { Text("No-show") }
                 }
             }
@@ -295,20 +328,32 @@ fun MireliApp(vm: DriverViewModel = viewModel()) {
         title = { Text("Confirm boarding") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Confirm only when the whole party is present. Partial boarding needs dispatch handling in the live service.")
+                Text("Record only passengers physically present. Remaining seats stay unresolved until boarded or marked absent.")
                 OutlinedTextField(value = code, onValueChange = { code = it.take(8) }, label = { Text("Boarding code") }, singleLine = true)
+                OutlinedTextField(value = count, onValueChange = { count = it.filter(Char::isDigit).take(2) }, label = { Text("Passengers boarding now") }, singleLine = true)
             }
         },
-        confirmButton = { TextButton(onClick = { execute(TripCommand.Board(passenger.id, code)); boardingDialog = false }, enabled = code.isNotBlank() && !busy) { Text("Confirm boarding") } },
+        confirmButton = { TextButton(onClick = { execute(TripCommand.Board(passenger.id, code, count.toIntOrNull())); boardingDialog = false }, enabled = code.isNotBlank() && count.toIntOrNull() in 1..passenger.unresolvedSeats && !busy) { Text("Confirm boarding") } },
         dismissButton = { TextButton(onClick = { boardingDialog = false }) { Text("Cancel") } })
     if (noShowDialog) AlertDialog(onDismissRequest = { noShowDialog = false },
         title = { Text("Record no-show?") },
-        text = { Text("This marks the whole party absent in the preview. It does not charge a fee or issue a refund.") },
+        text = { Text("This marks only the ${passenger.unresolvedSeats} remaining passengers absent in the preview. Already boarded passengers remain present. Live no-shows must follow dispatch's grace and contact rules.") },
         confirmButton = { TextButton(onClick = { execute(TripCommand.MarkNoShow(passenger.id)); noShowDialog = false }, enabled = !busy) { Text("Record no-show") } },
         dismissButton = { TextButton(onClick = { noShowDialog = false }) { Text("Cancel") } })
 }
 @Composable private fun TripAction(trip: Trip, busy: Boolean, execute: (TripCommand) -> Unit) {
     var confirm by rememberSaveable(trip.id, trip.stage) { mutableStateOf(false) }
+    var decline by rememberSaveable(trip.id) { mutableStateOf(false) }
+    var reason by rememberSaveable(trip.id) { mutableStateOf("") }
+    if (!trip.actionable) return
+    if (trip.assignment == AssignmentState.PENDING) {
+        OutlinedButton(onClick = { decline = true }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("Decline assignment") }
+    }
+    if (decline) AlertDialog(onDismissRequest = { decline = false }, title = { Text("Decline this assignment?") },
+        text = { Column { Text("Explain why you cannot take this journey. This test records the reason locally; no dispatcher is notified.")
+            OutlinedTextField(reason, { reason = it.take(200) }, label = { Text("Reason for declining") }) } },
+        confirmButton = { TextButton(onClick = { execute(TripCommand.Decline(reason)); decline = false }, enabled = !busy && reason.trim().length >= 5) { Text("Confirm decline") } },
+        dismissButton = { TextButton(onClick = { decline = false }) { Text("Keep assignment") } })
     val action = when (trip.stage) {
         TripStage.ASSIGNED -> "Accept assignment" to TripCommand.Accept
         TripStage.ACCEPTED -> "I have arrived" to TripCommand.Arrive

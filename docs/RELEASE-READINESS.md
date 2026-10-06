@@ -19,9 +19,11 @@ Status: native Android foundation and offline synthetic preview, not store-ready
 
 1. Audit and connect Mireli Web's authenticated backend.
 2. Implement real identity, sessions, driver/vehicle approval and document handling.
-3. Agree complete boarding/stop/reassignment rules; current group boarding is all-or-none.
-4. Add a durable database-backed command outbox with server idempotency. The preview's
-   in-memory replay map is not production synchronization.
+3. Agree live boarding/stop/reassignment/no-show rules. Partial boarding and decline
+   are now implemented and tested in the local preview, but have no server authority.
+4. Connect a production outbox with server idempotency, account binding and background
+   scheduling. The preview now has a durable SQLite command queue and atomic receipts;
+   its local simulator is not production synchronization.
 5. Implement approved GPS tracking, maps, Android permissions and foreground service.
 6. Add push delivery, acknowledgement escalation and staffed support.
 7. Integrate verified earnings/refunds/payouts from the shared ledger.
@@ -32,6 +34,13 @@ Status: native Android foundation and offline synthetic preview, not store-ready
 11. Startup/jank/battery/data measurements and baseline-profile optimization.
 12. Confirm permanent package name, business Play account, signing and store assets.
 13. Complete Play forms, reviewer access, closed testing and production approval.
+
+Version 0.2 adds native onboarding and encrypted device-local attachment drafts,
+file-type/size checks, expiry/completeness checks and local deletion. It deliberately
+does not label those files uploaded or the driver approved. On 4 October 2026,
+the supplied live website's `/api/driver/me` returned HTTP 404. Live onboarding,
+private storage, phone verification and audited compliance review remain blockers.
+See [test guide](TEST-BUILD-0.2.md).
 
 ## Performance acceptance work
 

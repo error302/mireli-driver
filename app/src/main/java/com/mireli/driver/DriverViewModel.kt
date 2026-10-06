@@ -14,6 +14,14 @@ import java.util.UUID
 class DriverViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = RepositoryFactory.create(application)
     val trips = repository.trips
+    val pendingCount = repository.pendingCount
+    val connected = repository.connected
+    val syncMessage = repository.syncMessage
+    init { viewModelScope.launch {
+        try { repository.setConnected(repository.connected.value) }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { /* Saved queue remains available for an explicit retry. */ }
+    } }
     private val _busy = MutableStateFlow(false)
     val busy = _busy.asStateFlow()
     private val _message = MutableStateFlow<String?>(null)
@@ -27,9 +35,20 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
                 when (val result = repository.execute(trip.id, trip.version, UUID.randomUUID().toString(), command)) {
                     is Change.Applied -> _message.value = "Preview updated"
                     is Change.Rejected -> _message.value = result.reason
+                    is Change.Queued -> _message.value = "Waiting to sync · not confirmed"
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { _message.value = "Unable to save. Please try again." }
+            finally { _busy.value = false }
+        }
+    }
+    fun setConnected(value: Boolean) {
+        if (_busy.value) return
+        _busy.value = true
+        viewModelScope.launch {
+            try { repository.setConnected(value) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { _message.value = "Unable to sync. Your saved actions remain on this phone." }
             finally { _busy.value = false }
         }
     }

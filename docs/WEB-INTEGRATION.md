@@ -18,8 +18,12 @@ No real booking, payment, account or customer data was created or altered.
 
 ## Required next input
 
-Website repository access (or its path on this machine), API documentation and
-staging access. A public URL alone does not establish booking table ownership,
+Update, 4 October 2026: source access is now established. See
+[backend mapping](MSAFIRI-BACKEND-MAPPING.md). The original directory is preserved
+and an aligned web working copy is being validated. Remaining inputs are staging
+database/deployed-schema verification and a verified driver authentication service.
+
+API documentation and staging access. A public URL alone does not establish booking table ownership,
 payment callback authenticity, authenticated driver authorization or usable APIs.
 
 ## Reconcile with the master plan

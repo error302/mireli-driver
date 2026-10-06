@@ -3,6 +3,28 @@
 This is a synthetic Android preview. These results do not establish production
 readiness, legal compliance, live web integration or performance parity with Uber/Bolt.
 
+## Version 0.2 — verified 6 October 2026
+
+- Latest source rebuilt: demo APK, instrumentation package and shrunk unsigned
+  production APK. Gradle build succeeded.
+- 29 domain tests passed: 21 trip/assignment rules and 8 onboarding checks.
+- Android lint: 0 errors, 9 advisory warnings.
+- Test APK signature verification passed; app and test package installed.
+- Direct instrumentation: **OK (12 tests)** in 107.604 seconds on API 37,
+  including the onboarding form, encrypted file/draft handling, tamper rejection,
+  offline queue replay after repository recreation and complete shared journey.
+- Gradle's connected-test harness failed before running app tests; its result is
+  not reported as passing. Direct Android instrumentation supplied the device evidence.
+- Test APK: 11,853,494 bytes; SHA-256
+  `a2cc060853519aa110f9f6f3be7e8a803d9e2338d8d6d0ff11220a81aee67950`.
+- Fresh journey screenshots render correctly on this emulator, without the earlier
+  System UI dialog; Today was visually inspected. This does not replace physical
+  phone, TalkBack or large-font testing.
+
+See [0.2 testing guide](TEST-BUILD-0.2.md) for the implemented document checklist,
+file storage scope and remaining production blockers. The earlier results below
+describe 0.1. They do not supersede this increment's limits.
+
 ## Verified locally
 
 - Gradle 9.4.1, Android SDK 36, Android Studio bundled JBR on Windows.
