@@ -9,8 +9,10 @@ android {
         applicationId = "io.github.error302.mireli.driver"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
+        buildConfigField("String", "DRIVER_SERVICE_URL", "\"https://mireli-tau.vercel.app\"")
+        buildConfigField("boolean", "DRIVER_SERVICE_TEST", "false")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     flavorDimensions += "environment"
@@ -24,6 +26,14 @@ android {
         create("production") {
             dimension = "environment"
             resValue("string", "app_name", "Mireli Driver")
+        }
+        create("staging") {
+            dimension = "environment"
+            applicationIdSuffix = ".staging"
+            versionNameSuffix = "-staging"
+            resValue("string", "app_name", "Mireli Staging")
+            buildConfigField("String", "DRIVER_SERVICE_URL", "\"http://10.0.2.2:3100\"")
+            buildConfigField("boolean", "DRIVER_SERVICE_TEST", "true")
         }
     }
     buildTypes {

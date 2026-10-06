@@ -104,6 +104,12 @@ class OnboardingStore(private val context: Context) {
         }.getOrDefault(false)
         if (valid) null else "${OnboardingPolicy.documents.find { it.id == id }?.title ?: "Document"} cannot be read. Replace its attachment."
     }
+    fun attachmentBytes(item:DocumentEvidence):ByteArray {
+        require(Regex("[0-9a-f-]{36}").matches(item.storageId))
+        val bytes=decrypt(File(directory,"${item.storageId}.enc"))
+        require(bytes.size==item.size && validSignature(item.mime,bytes))
+        return bytes
+    }
     fun clear() {
         directory.listFiles()?.forEach { check(it.delete()) { "Could not clear the local draft." } }
         KeyStore.getInstance("AndroidKeyStore").apply { load(null); deleteEntry(KEY) }

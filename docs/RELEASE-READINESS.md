@@ -1,6 +1,28 @@
 # Release readiness
 
-Status: native Android foundation and offline synthetic preview, not store-ready.
+Status: 0.3 native connected account/trip/settlement features and local backend
+validated, not store-ready. Live driver API still returns HTTP 404 on 6 October 2026.
+
+## Current release gates
+
+1. Backend write/deployment access; inspect the actual PostgreSQL baseline, take a
+   backup, prove restoration and apply the additive migration on staging first.
+2. Configure and verify private S3 storage/scanning, Africa's Talking SMS, reviewed
+   driver terms/privacy and strong production administrator authentication.
+3. Verify M-Pesa sandbox/provider callbacks, approved beneficiaries, reconciliation
+   and live refunds. Live payouts default to disabled; unknown transfers cannot retry.
+4. Staff document, support, no-show and dispatch review. Partial-party fares remain
+   held pending a reviewed settlement decision.
+5. Implement consented foreground GPS, push alerts/escalation and production
+   background sync. The current saved action requires explicit online confirmation.
+6. Fix inherited concurrent schedule/allocation generation; complete driver
+   reassignment/cancellation and account deletion/retention workflows.
+7. Physical fleet phones, offline/process-death/TalkBack/large-font and release
+   startup/jank/battery/data measurements; Kiswahili and copy/resource extraction.
+8. Confirm company/package ownership, signing, Kenyan operating requirements,
+   published policies, store forms/assets, reviewer access and Play closed testing.
+
+## Earlier foundation scope
 
 ## Implemented in this increment
 
@@ -11,7 +33,7 @@ Status: native Android foundation and offline synthetic preview, not store-ready
 - Wrong-code, duplicate-boarding, stale-version, empty-departure and capacity guards.
 - Separate production source set with no sample trips and no live sign-in claims.
 - Lifecycle-aware state observation, lazy keyed lists and IO-dispatched persistence.
-- No sensitive permissions or network traffic in the current build.
+- The earlier 0.1 build had no network traffic; 0.3 adds Internet/network-state access.
 - Shrunk unsigned production build configuration, CI and domain tests.
 - Original Mireli Driver logo derived from supplied brand reference.
 

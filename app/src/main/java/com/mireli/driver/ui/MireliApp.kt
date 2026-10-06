@@ -40,7 +40,9 @@ private val Mist = Color(0xFFF3F5F8)
 private val Ink = Color(0xFF142D40)
 private val Muted = Color(0xFF5A6E7C)
 private val Palette = lightColorScheme(primary = Teal, secondary = Navy, background = Mist,
-    surface = Color.White, onSurface = Ink, onBackground = Ink, surfaceVariant = Color(0xFFEAF0F3))
+    surface = Color.White, onSurface = Ink, onBackground = Ink, surfaceVariant = Color(0xFFEAF0F3),
+    secondaryContainer = Color(0xFFDDF2EE), onSecondaryContainer = Navy,
+    surfaceContainer = Color.White, surfaceContainerHighest = Color.White)
 
 fun money(minor: Long): String = "KSh " + NumberFormat.getNumberInstance(Locale.forLanguageTag("en-KE")).apply {
     minimumFractionDigits = if (minor % 100L == 0L) 0 else 2
@@ -67,6 +69,7 @@ fun MireliApp(vm: DriverViewModel = viewModel()) {
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
     var help by rememberSaveable { mutableStateOf(false) }
     var onboarding by rememberSaveable { mutableStateOf(false) }
+    var services by rememberSaveable { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val selected = trips.find { it.id == selectedId }
     val listState = rememberLazyListState()
@@ -76,9 +79,10 @@ fun MireliApp(vm: DriverViewModel = viewModel()) {
     MaterialTheme(colorScheme = Palette, shapes = Shapes(
         small = RoundedCornerShape(12.dp), medium = RoundedCornerShape(20.dp), large = RoundedCornerShape(28.dp))) {
         if (!RepositoryFactory.isDemo) {
-            ConnectionRequired()
+            DriverServicesScreen()
             return@MaterialTheme
         }
+        if(services){DriverServicesScreen(onClose={services=false});return@MaterialTheme}
         if (onboarding) {
             OnboardingScreen(onClose = { onboarding = false })
             return@MaterialTheme
@@ -198,6 +202,7 @@ fun MireliApp(vm: DriverViewModel = viewModel()) {
                         item { InfoCard(MireliIcons.PersonOutline, "Preview driver", "This sample identity is not an approved Mireli driver account.") }
                         item { SectionTitle("Driver readiness", "BEFORE LAUNCH") }
                         item { Button(onClick = { onboarding = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Driver onboarding & documents") } }
+                        item { OutlinedButton(onClick={services=true},modifier=Modifier.fillMaxWidth()){Text("Connect driver account & payouts")} }
                         item { InfoCard(MireliIcons.Badge, "Application checklist", "Driver details, vehicle details, encrypted document drafts and expiry validation. Live submission and review remain unconnected.") }
                         item { InfoCard(MireliIcons.PrivacyTip, "Privacy & account deletion", "Live policies and request service pending") }
                         item { InfoCard(MireliIcons.LocationOn, "Location access", "Not requested in preview") }
@@ -209,7 +214,7 @@ fun MireliApp(vm: DriverViewModel = viewModel()) {
                                 }
                             }
                         }
-                        item { InfoCard(MireliIcons.PhoneAndroid, "App version", "0.2.0 · Native Android test build") }
+                        item { InfoCard(MireliIcons.PhoneAndroid, "App version", "0.3.0 · Native Android test build") }
                         item { OutlinedButton(onClick = vm::reset, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Reset sample trips") } }
                     }
                 }

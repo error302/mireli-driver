@@ -1,4 +1,33 @@
-# Build validation — 4 October 2026
+# Build validation — 6 October 2026
+
+## Version 0.3
+
+- Demo, staging and optimized unsigned production APKs compile; Android lint passes.
+- 29 Android domain tests pass.
+- Version 0.3 preview regression: **OK (12 tests)**, 125.164 seconds.
+- Final connected native instrumentation: **OK (4 tests)**, 53.719 seconds, API 37 emulator.
+  Sign-in, encrypted session, server profile/document import, support submission,
+  revoked logout and approved charter acceptance/boarding/delivery/queued earnings.
+- Encrypted session expiry, persisted account isolation and tamper rejection pass.
+- A final UI regression exposed retained sign-in scroll/keyboard state; the
+  connected screen now resets to the top on sign-in and tab changes.
+- The final captures were visually inspected without overlays. An earlier boot
+  logged a System UI keyguard-service ANR; those obstructed images are preserved
+  separately. No ANR appeared in the fresh emulator's final event log.
+- Backend: 23 unit tests, typecheck and lint pass. Guarded local HTTP integration
+  covers application review, stale versions, command replay, partial no-show fund
+  holds, beneficiary approval and payout callback correlation.
+- PostgreSQL 16 isolated baseline plus additive migration apply successfully.
+  Concurrent command retries produce one boarding update, one settlement and one
+  simulated transfer attempt. Expected serialization conflicts were retried.
+- Full shared web production build passes: PostgreSQL generation, webpack,
+  TypeScript and 48 static-generation tasks, including the driver/admin routes.
+- Live driver endpoint: HTTP 404. No Vercel session; cofounder repository access is
+  read-only. No live migration, storage, SMS or M-Pesa proof exists.
+- Staging and preview are testing artifacts; no Uber/Bolt parity, legal approval,
+  physical-phone performance, background tracking or Play readiness is claimed.
+
+The results below preserve earlier increments for comparison.
 
 This is a synthetic Android preview. These results do not establish production
 readiness, legal compliance, live web integration or performance parity with Uber/Bolt.

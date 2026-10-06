@@ -5,15 +5,18 @@ Kotlin, Jetpack Compose, Android API 36 target, API 26 minimum.
 
 ## Current status
 
-**0.2.0 is a working test build, not a live service or Play-ready release.**
-It includes Today, Trips, assignment details, boarding/no-show confirmation,
-trip progression, partial-party boarding, assignment decline reasons, shared/charter
-sample earnings and driver onboarding screens. The onboarding flow saves encrypted
-document drafts locally, checks expiry/completeness and supports deleting its copies.
-It does not upload documents, verify a phone, submit an application or approve a driver.
-Sample progress
-is saved across restarts. Production builds contain no demo repository and block
-live operations until the existing website backend is connected.
+**0.3.0 is a tested development build; the shared backend is not deployed yet.**
+The connected native screens implement phone verification, private document uploads,
+application submission and reviewer feedback, assigned trips, passenger-code boarding,
+partial boarding/no-show reports, journey completion, settlement statements,
+beneficiary review and support cases. Sensitive sessions and uncertain trip actions
+are encrypted on the phone. Every trip command has a server receipt and version check.
+
+The separate local backend uses the existing passenger Driver/Trip/Booking/ledger
+records. Its PostgreSQL migration and concurrent command/settlement tests passed on
+an isolated database. No real funds, SMS or identity documents were used.
+Live storage, SMS, M-Pesa, administrator authentication and deployment remain required.
+The demo flavor preserves the offline sample journey for testing on a physical phone.
 
 Passenger website: https://mireli-tau.vercel.app/
 
@@ -30,18 +33,22 @@ with your local SDK path; never commit that file.
 ./gradlew :app:testDemoDebugUnitTest :app:lintDemoDebug
 ./gradlew :app:connectedDemoDebugAndroidTest
 ./gradlew :app:assembleProductionRelease
+./gradlew :app:assembleStagingDebug :app:assembleStagingDebugAndroidTest
 ```
 
 On Windows use gradlew.bat. The preview APK is at
 app/build/outputs/apk/demo/debug/app-demo-debug.apk. The production release is
-unsigned and unconnected; do not submit it to Play.
+unsigned and targets the official website. The driver API still returned 404 on
+6 October 2026; do not submit this build to Play. Staging uses the Android emulator's
+10.0.2.2 bridge to the isolated web preview on port 3100; it is not a phone deployment.
 
 ## Architecture
 
 - domain/: immutable models and guarded, versioned trip transitions.
 - data/DriverRepository: integration seam shared by the UI.
 - src/demo/: local synthetic repository, fixtures and persistence.
-- src/production/: fail-closed adapter pending real authenticated integration.
+- DriverServicesViewModel / DriverApi: connected account, trip and money screens.
+- src/production/: no sample trips; the connected service UI is the entry point.
 - DriverViewModel: lifecycle state and serialized user actions.
 - ui/: Compose screens, keyed lazy lists and confirmation dialogs.
 

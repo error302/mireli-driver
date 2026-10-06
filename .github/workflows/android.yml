@@ -23,7 +23,7 @@ jobs:
           log-accepted-android-sdk-licenses: false
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x gradlew
-      - run: ./gradlew :app:testDemoDebugUnitTest :app:lintDemoDebug :app:assembleDemoDebug :app:assembleProductionRelease :app:assembleDemoDebugAndroidTest --no-daemon
+      - run: ./gradlew :app:testDemoDebugUnitTest :app:lintDemoDebug :app:assembleDemoDebug :app:assembleProductionRelease :app:assembleDemoDebugAndroidTest :app:assembleStagingDebug :app:assembleStagingDebugAndroidTest --no-daemon
       - uses: actions/upload-artifact@v4
         with:
           name: mireli-preview-apk
