@@ -1,0 +1,9 @@
+<resources>
+    <string name="appearance">Appearance</string>
+    <string name="theme_system">System</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="theme_explanation">Choose how Mireli looks. System follows your phone’s appearance setting.</string>
+    <string name="theme_save_error">Could not save your appearance. Please try again.</string>
+    <string name="done">Done</string>
+</resources>

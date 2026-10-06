@@ -5,7 +5,7 @@ Kotlin, Jetpack Compose, Android API 36 target, API 26 minimum.
 
 ## Current status
 
-**0.3.0 is a tested development build; the shared backend is not deployed yet.**
+**0.3.1 is a development build; the shared backend is not deployed yet.**
 The connected native screens implement phone verification, private document uploads,
 application submission and reviewer feedback, assigned trips, passenger-code boarding,
 partial boarding/no-show reports, journey completion, settlement statements,
@@ -17,6 +17,11 @@ records. Its PostgreSQL migration and concurrent command/settlement tests passed
 an isolated database. No real funds, SMS or identity documents were used.
 Live storage, SMS, M-Pesa, administrator authentication and deployment remain required.
 The demo flavor preserves the offline sample journey for testing on a physical phone.
+
+Tap **Appearance** to choose **Light**, **Dark** or **System**. System is the
+default and follows Android's appearance setting. The choice is saved on the
+phone, survives app restarts and applies to trips, onboarding, sign-in, earnings,
+support, dialogs and system bars. Appearance is available before sign-in.
 
 Passenger website: https://mireli-tau.vercel.app/
 

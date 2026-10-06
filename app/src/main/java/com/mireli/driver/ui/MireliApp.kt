@@ -34,15 +34,10 @@ import com.mireli.driver.domain.*
 import java.text.NumberFormat
 import java.util.Locale
 
-private val Navy = Color(0xFF063555)
-private val Teal = Color(0xFF007F79)
-private val Mist = Color(0xFFF3F5F8)
-private val Ink = Color(0xFF142D40)
-private val Muted = Color(0xFF5A6E7C)
-private val Palette = lightColorScheme(primary = Teal, secondary = Navy, background = Mist,
-    surface = Color.White, onSurface = Ink, onBackground = Ink, surfaceVariant = Color(0xFFEAF0F3),
-    secondaryContainer = Color(0xFFDDF2EE), onSecondaryContainer = Navy,
-    surfaceContainer = Color.White, surfaceContainerHighest = Color.White)
+private val Navy:Color @Composable get()=MaterialTheme.colorScheme.secondary
+private val Teal:Color @Composable get()=MaterialTheme.colorScheme.primary
+private val Mist:Color @Composable get()=MaterialTheme.colorScheme.background
+private val Muted:Color @Composable get()=MaterialTheme.colorScheme.onSurfaceVariant
 
 fun money(minor: Long): String = "KSh " + NumberFormat.getNumberInstance(Locale.forLanguageTag("en-KE")).apply {
     minimumFractionDigits = if (minor % 100L == 0L) 0 else 2
@@ -76,26 +71,25 @@ fun MireliApp(vm: DriverViewModel = viewModel()) {
     LaunchedEffect(tab, selectedId, selected?.stage) { listState.scrollToItem(0) }
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.dismissMessage() } }
     BackHandler(selectedId != null) { selectedId = null }
-    MaterialTheme(colorScheme = Palette, shapes = Shapes(
-        small = RoundedCornerShape(12.dp), medium = RoundedCornerShape(20.dp), large = RoundedCornerShape(28.dp))) {
+    MireliTheme {
         if (!RepositoryFactory.isDemo) {
             DriverServicesScreen()
-            return@MaterialTheme
+            return@MireliTheme
         }
-        if(services){DriverServicesScreen(onClose={services=false});return@MaterialTheme}
+        if(services){DriverServicesScreen(onClose={services=false});return@MireliTheme}
         if (onboarding) {
             OnboardingScreen(onClose = { onboarding = false })
-            return@MaterialTheme
+            return@MireliTheme
         }
         Scaffold(containerColor = Mist, snackbarHost = { SnackbarHost(snackbar) },
             bottomBar = {
-                if (selected == null) NavigationBar(containerColor = Color.White, tonalElevation = 0.dp) {
+                if (selected == null) NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) {
                     listOf("Today" to MireliIcons.GridView, "Trips" to MireliIcons.Route,
                         "Earnings" to MireliIcons.AccountBalanceWallet, "Account" to MireliIcons.PersonOutline)
                         .forEachIndexed { index, (title, icon) ->
                             NavigationBarItem(selected = tab == index, onClick = { tab = index },
                                 icon = { Icon(icon, null) }, label = { Text(title) },
-                                colors = NavigationBarItemDefaults.colors(indicatorColor = Color(0xFFDDF2EE)))
+                                colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer))
                         }
                 }
             }) { padding ->
@@ -115,16 +109,17 @@ fun MireliApp(vm: DriverViewModel = viewModel()) {
                             Text("mireli", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = Navy)
                             Text("D R I V E R", style = MaterialTheme.typography.labelSmall, color = Muted)
                         }
-                        IconButton(onClick = { help = true }, modifier = Modifier.background(Color.White, CircleShape)) {
+                        AppearanceButton()
+                        IconButton(onClick = { help = true }, modifier = Modifier.background(MaterialTheme.colorScheme.surface, CircleShape)) {
                             Icon(MireliIcons.HeadsetMic, "Help and support", tint = Navy)
                         }
                     }
                 }
                 item {
-                    Surface(color = Color(0xFFE4EDF6), shape = RoundedCornerShape(12.dp)) {
+                    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(12.dp)) {
                         Text("PREVIEW · Sample trips, no live bookings or tracking",
                             Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-                            color = Navy, style = MaterialTheme.typography.labelMedium)
+                            color = MaterialTheme.colorScheme.onSecondaryContainer, style = MaterialTheme.typography.labelMedium)
                     }
                 }
                 if (!connected || pendingCount > 0 || syncMessage != null) item {
@@ -178,7 +173,7 @@ fun MireliApp(vm: DriverViewModel = viewModel()) {
                     2 -> {
                         item { Heading("Earnings", "A clear view of every journey.") }
                         item {
-                            Box(Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(Navy, Teal)), RoundedCornerShape(26.dp)).padding(24.dp)) {
+                            Box(Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(Color(0xFF063555), Color(0xFF007F79))), RoundedCornerShape(26.dp)).padding(24.dp)) {
                                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                     Text("COMPLETED SAMPLE FARES", color = Color.White.copy(alpha = .8f), style = MaterialTheme.typography.labelMedium)
                                     Text(money(trips.filter { it.stage == TripStage.COMPLETED }.sumOf { it.fareMinor }), color = Color.White,
@@ -214,7 +209,7 @@ fun MireliApp(vm: DriverViewModel = viewModel()) {
                                 }
                             }
                         }
-                        item { InfoCard(MireliIcons.PhoneAndroid, "App version", "0.3.0 · Native Android test build") }
+                        item { InfoCard(MireliIcons.PhoneAndroid, "App version", "0.3.1 · Native Android test build") }
                         item { OutlinedButton(onClick = vm::reset, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Reset sample trips") } }
                     }
                 }
@@ -239,7 +234,7 @@ fun MireliApp(vm: DriverViewModel = viewModel()) {
     }
 }
 @Composable private fun Stat(label: String, value: String, modifier: Modifier) {
-    Surface(modifier, shape = RoundedCornerShape(20.dp), color = Color.White) {
+    Surface(modifier, shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Text(value, fontSize = 30.sp, fontWeight = FontWeight.SemiBold, color = Navy)
             Text(label, color = Muted)
@@ -247,17 +242,17 @@ fun MireliApp(vm: DriverViewModel = viewModel()) {
     }
 }
 @Composable private fun JourneyCard(trip: Trip, open: () -> Unit) {
-    Card(onClick = open, colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(26.dp)) {
+    Card(onClick = open, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(26.dp)) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(trip.reportingTime, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Navy)
-                Surface(color = Color(0xFFE4F2EE), shape = RoundedCornerShape(8.dp)) {
+                Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(8.dp)) {
                     Text(if (trip.service == ServiceType.SHARED) "Shared transfer" else "Private charter",
-                        Modifier.padding(8.dp), color = Teal, style = MaterialTheme.typography.labelMedium)
+                        Modifier.padding(8.dp), color = MaterialTheme.colorScheme.onPrimaryContainer, style = MaterialTheme.typography.labelMedium)
                 }
             }
             RouteStops(trip)
-            HorizontalDivider(color = Mist)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(if (trip.actionable) trip.stage.label() else trip.assignment.name.lowercase().replaceFirstChar { it.uppercase() }, fontWeight = FontWeight.Medium)
@@ -281,27 +276,27 @@ fun MireliApp(vm: DriverViewModel = viewModel()) {
     }
 }
 @Composable private fun RouteCard(trip: Trip) {
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
             Text("REPORT AT " + trip.reportingTime, color = Teal, style = MaterialTheme.typography.labelLarge)
             RouteStops(trip)
-            HorizontalDivider(color = Mist)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Text(trip.vehicle, color = Muted)
             Text(trip.bookedSeats.toString() + " / " + trip.capacity + " seats", color = Muted)
         }
     }
 }
 @Composable private fun ProgressCard(trip: Trip) {
-    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFE5F2EF))) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
         Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("JOURNEY PROGRESS", style = MaterialTheme.typography.labelMedium, color = Teal)
-            LinearProgressIndicator(progress = { trip.stage.ordinal / 4f }, modifier = Modifier.fillMaxWidth(), color = Teal, trackColor = Color.White)
+            Text("JOURNEY PROGRESS", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
+            LinearProgressIndicator(progress = { trip.stage.ordinal / 4f }, modifier = Modifier.fillMaxWidth(), color = Teal, trackColor = MaterialTheme.colorScheme.surface)
             Text(trip.stage.label(), color = Navy, fontWeight = FontWeight.SemiBold)
         }
     }
 }
 @Composable private fun InfoCard(icon: ImageVector, title: String, detail: String) {
-    Surface(shape = RoundedCornerShape(20.dp), color = Color.White) {
+    Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
         Row(Modifier.fillMaxWidth().padding(20.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Icon(icon, null, tint = Teal)
             Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -316,7 +311,7 @@ fun MireliApp(vm: DriverViewModel = viewModel()) {
     var noShowDialog by rememberSaveable(passenger.id) { mutableStateOf(false) }
     var code by rememberSaveable(passenger.id) { mutableStateOf("") }
     var count by rememberSaveable(passenger.id) { mutableStateOf("") }
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(passenger.name, fontWeight = FontWeight.SemiBold)
             Text("${passenger.boardedCount} of ${passenger.seats} boarded · ${passenger.noShowCount} no-show · ${passenger.unresolvedSeats} waiting", color = Muted)

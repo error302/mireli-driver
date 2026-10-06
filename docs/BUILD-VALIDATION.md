@@ -1,5 +1,28 @@
 # Build validation — 6 October 2026
 
+## Version 0.3.1 — appearance
+
+- Light, Dark and System apply through the shared app theme, including cards,
+  forms, dialogs and system bars. The durable device preference defaults to System.
+- Demo and staging APKs, both instrumentation packages, and the optimized unsigned
+  production APK compile. Android lint: **0 errors, 13 advisory warnings**.
+- **29 domain tests** pass. Direct emulator regression: **OK (14 tests)** in
+  **156.971 seconds**, including two appearance tests and the existing journey,
+  onboarding, encrypted-storage and offline-replay checks.
+- Appearance tests verify saved selection after Activity recreation, Android's
+  system-mode changes, explicit overrides, radio semantics, and system-bar icons.
+- A final focused rerun passed in **37.39 seconds** after adding a clean synthetic
+  draft fixture. Typed onboarding input survives switching Light to Dark, and the
+  loaded form was captured and visually inspected in Dark.
+- Demo and staging APK signatures verify; version code **4**, version **0.3.1**.
+- The emulator logged a SystemUIService startup ANR before the first screenshots.
+  Those obstructed captures were retained separately. After recovery, the repeated
+  regression logged no new ANR/crash events; Today, Earnings and connected sign-in
+  screenshots were inspected without overlays.
+- This increment changes Android appearance only. The backend and live provider
+  workflows were not rerun. Physical-phone, TalkBack, large-font and older-Android
+  checks remain required before release; the 0.3 production gates below still apply.
+
 ## Version 0.3
 
 - Demo, staging and optimized unsigned production APKs compile; Android lint passes.

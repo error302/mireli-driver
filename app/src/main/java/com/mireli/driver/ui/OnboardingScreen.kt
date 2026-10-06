@@ -48,6 +48,7 @@ fun OnboardingScreen(onClose: () -> Unit, vm: OnboardingViewModel = viewModel())
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
             item {
                 Text("Become a Mireli driver", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                AppearanceButton()
                 Text("${step + 1} of 3 · ${listOf("Driver & vehicle", "Documents", "Review")[step]}", color = MaterialTheme.colorScheme.primary)
                 LinearProgressIndicator(progress = { (step + 1) / 3f }, modifier = Modifier.fillMaxWidth().padding(top = 12.dp))
             }

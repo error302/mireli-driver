@@ -48,6 +48,7 @@ private fun JSONArray.objects()=(0 until length()).map {getJSONObject(it)}
     }}){padding->
         LazyColumn(Modifier.fillMaxSize().padding(padding).imePadding(),state=listState,contentPadding=PaddingValues(22.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
             item {Row(horizontalArrangement=Arrangement.spacedBy(12.dp)){Image(painterResource(R.drawable.mireli_driver_logo),"Mireli",Modifier.size(44.dp));Column{Text("Mireli Driver",style=MaterialTheme.typography.headlineMedium);Text(if(state.signedIn)"Your driver account" else "Sign in or apply to drive",style=MaterialTheme.typography.bodyMedium)}}}
+            item {AppearanceButton()}
             if(onClose!=null)item {TextButton(onClick=onClose){Text("Back to preview")}}
             if(BuildConfig.DRIVER_SERVICE_TEST)item {Card {Text("STAGING · Test data; no real SMS or payouts.",Modifier.padding(16.dp))}}
             if(state.loading)item {LinearProgressIndicator(Modifier.fillMaxWidth())}
