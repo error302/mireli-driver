@@ -9,8 +9,8 @@ android {
         applicationId = "io.github.error302.mireli.driver"
         minSdk = 26
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.4.0"
+        versionCode = 7
+        versionName = "0.4.2"
         buildConfigField("String", "DRIVER_SERVICE_URL", "\"https://mireli-tau.vercel.app\"")
         buildConfigField("boolean", "DRIVER_SERVICE_TEST", "false")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

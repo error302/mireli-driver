@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONObject
 
 data class DriverServiceState(val loading:Boolean=true,val signedIn:Boolean=false,val challengeId:String?=null,
-    val demoCode:String?=null,val challengePhone:String?=null,val onboarding:JSONObject?=null,val earnings:JSONObject?=null,val support:JSONObject?=null,val supportSent:Int=0,val eligibility:JSONObject?=null,val trips:JSONObject?=null,val pendingTripAction:Boolean=false,val registrationOpen:Boolean?=null,val resendAt:Long=0,val error:String?=null)
+    val demoCode:String?=null,val challengePhone:String?=null,val onboarding:JSONObject?=null,val earnings:JSONObject?=null,val support:JSONObject?=null,val supportSent:Int=0,val eligibility:JSONObject?=null,val trips:JSONObject?=null,val pendingTripAction:Boolean=false,val phoneSignInOpen:Boolean?=null,val registrationOpen:Boolean?=null,val serviceMessage:String?=null,val resendAt:Long=0,val error:String?=null)
 class DriverServicesViewModel(application:Application):AndroidViewModel(application) {
     private val api=DriverApi()
     private val sessions=DriverSessionStore(application)
@@ -41,13 +41,16 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
         val status=api.request("/status")
         if(status.optString("apiVersion")!="v1" || !status.has("simulation") || status.getBoolean("simulation")!=BuildConfig.DRIVER_SERVICE_TEST)throw DriverServiceException(503,"This build cannot connect to that service environment.")
         val available=status.optBoolean("registrationOpen",false)
-        mutable.value=mutable.value.copy(registrationOpen=available)
+        // Existing drivers must retain sign-in even when new applications are paused.
+        // Older services may omit phoneSignInOpen; preserve their original behavior until migrated.
+        val signInOpen=status.optBoolean("phoneSignInOpen",available)
+        mutable.value=mutable.value.copy(phoneSignInOpen=signInOpen,registrationOpen=available,serviceMessage=status.optString("message").takeIf {it.isNotBlank()&&it!="null"})
     }
     fun refreshServiceStatus()=work {serviceStatus()}
     fun requestCode(phone:String)=work {
         if(mutable.value.resendAt>System.currentTimeMillis())throw DriverServiceException(429,"Please wait before requesting another code.")
         serviceStatus()
-        if(mutable.value.registrationOpen!=true)throw DriverServiceException(503,"Driver registration is not open yet. Please check again later.")
+        if(mutable.value.phoneSignInOpen!=true)throw DriverServiceException(503,"Driver phone sign-in is not available yet. Please check again later.")
         val result=api.request("/auth/challenges","POST",json=JSONObject().put("phone",phone))
         mutable.value=mutable.value.copy(challengeId=result.getString("challengeId"),challengePhone=phone,resendAt=System.currentTimeMillis()+result.optInt("cooldownSeconds",60).coerceIn(30,300)*1000L,demoCode=if(BuildConfig.DRIVER_SERVICE_TEST)result.optString("demoCode").takeIf {it.isNotBlank()} else null)
     }

@@ -33,7 +33,7 @@ class DriverApi {
                 out.toByteArray().toString(Charsets.UTF_8)
             }?:"{}"
             val result=runCatching {JSONObject(body)}.getOrNull()
-            if(status !in 200..299)throw DriverServiceException(status,if(status==404)"Driver services are not available on this server yet." else result?.optString("error")?.takeIf {it.isNotBlank()}?:"The driver service is unavailable. Try again later.")
+            if(status !in 200..299)throw DriverServiceException(status,if(status==404)"Driver sign-in is not connected at this server address yet. Contact Mireli support or retry after the driver service is live." else result?.optString("error")?.takeIf {it.isNotBlank()}?:"The driver service is unavailable. Try again later.")
             result?:throw DriverServiceException(503,"The service returned an invalid response.")
         } finally {connection.disconnect()}
     }

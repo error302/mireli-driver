@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -15,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
@@ -31,6 +33,14 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 private fun JSONArray.objects()=(0 until length()).map {getJSONObject(it)}
+@Composable private fun OnboardingStep(number:String,label:String) {
+    Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+        Surface(shape=RoundedCornerShape(10.dp),color=MaterialTheme.colorScheme.surface) {
+            Text(number,Modifier.padding(horizontal=11.dp,vertical=6.dp),style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary,fontWeight=FontWeight.SemiBold)
+        }
+        Text(label,style=MaterialTheme.typography.bodyMedium)
+    }
+}
 @Composable fun DriverServicesScreen(onClose:(()->Unit)?=null,vm:DriverServicesViewModel=viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
     var phone by rememberSaveable {mutableStateOf("")};var code by rememberSaveable {mutableStateOf("")}
@@ -53,36 +63,80 @@ private fun JSONArray.objects()=(0 until length()).map {getJSONObject(it)}
         NavigationBarItem(section==1,{section=1},icon={Icon(MireliIcons.AccountBalanceWallet,null)},label={Text("Earnings")})
         NavigationBarItem(section==2,{section=2},icon={Icon(MireliIcons.HeadsetMic,null)},label={Text("Support")})
     }}){padding->
-        LazyColumn(Modifier.fillMaxSize().padding(padding).imePadding(),state=listState,contentPadding=PaddingValues(22.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
-            item {Row(horizontalArrangement=Arrangement.spacedBy(12.dp),verticalAlignment=Alignment.CenterVertically){Image(painterResource(R.drawable.mireli_driver_logo),"Mireli",Modifier.size(48.dp));Column{Text("Mireli Driver",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Bold);Text(if(state.signedIn)"Your driver account" else "Sign in or apply to drive",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)}}}
-            item {AppearanceToggle()}
+        LazyColumn(Modifier.fillMaxSize().padding(padding).imePadding(),state=listState,contentPadding=PaddingValues(horizontal=20.dp,vertical=16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
+            item {Row(horizontalArrangement=Arrangement.spacedBy(12.dp),verticalAlignment=Alignment.CenterVertically){Image(painterResource(R.drawable.mireli_driver_logo),"Mireli",Modifier.size(46.dp));Column{Text("Mireli Driver",style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold);Text(if(state.signedIn)"Your driver account" else "Mombasa · SGR transfers",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)}}}
+            if(state.signedIn)item {AppearanceToggle()}
             if(onClose!=null)item {TextButton(onClick=onClose){Text("Back to preview")}}
             if(BuildConfig.DRIVER_SERVICE_TEST)item {Card {Text("STAGING · Test data; no real SMS or payouts.",Modifier.padding(16.dp))}}
             if(state.loading)item {LinearProgressIndicator(Modifier.fillMaxWidth())}
             state.error?.takeIf{state.signedIn||state.registrationOpen==true}?.let {error->item {Card(colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.errorContainer)){Text(error,Modifier.padding(16.dp),color=MaterialTheme.colorScheme.onErrorContainer)}} }
             if(!state.signedIn) {
-                item {Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface)){Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
-                    Icon(MireliIcons.Train,null,tint=MaterialTheme.colorScheme.primary,modifier=Modifier.size(30.dp))
-                    Text("Your next chapter starts here.",style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.SemiBold)
-                    Text("Drive SGR transfers across Mombasa. Create your driver account, complete your documents and receive assignments once approved.",color=MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("1  Verify phone    ·    2  Submit documents    ·    3  Get approved",style=MaterialTheme.typography.bodySmall)
-                }}}
-                if(!state.loading&&state.registrationOpen!=true)item {Card(Modifier.fillMaxWidth()){Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
-                    Text("Driver registration is not open yet",style=MaterialTheme.typography.titleMedium)
-                    Text(state.error?:"Check again shortly, or contact Mireli for help. Your account is created only after phone verification.")
-                    OutlinedButton(onClick=vm::refreshServiceStatus){Text("Check availability")}
-                }}}
-                item {OutlinedTextField(phone,{phone=it.take(20)},label={Text("Kenyan mobile number")},placeholder={Text("07XX XXX XXX")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Phone),singleLine=true,enabled=!state.loading&&state.challengeId==null,modifier=Modifier.fillMaxWidth())}
-                if(state.challengeId==null)item {Button(onClick={vm.requestCode(phone)},enabled=!state.loading&&state.registrationOpen==true&&phone.isNotBlank(),modifier=Modifier.fillMaxWidth().heightIn(min=52.dp)){Text("Send verification code")}}
-                if(state.challengeId!=null) {
-                    item {Text("Code requested for ${state.challengePhone}");TextButton(onClick={vm.changePhone();code=""},enabled=!state.loading){Text("Use a different number")}}
-                    state.demoCode?.let {sample->item {Text("Sample verification code: $sample")}}
-                    item {OutlinedTextField(code,{code=it.filter(Char::isDigit).take(6)},label={Text("6-digit verification code")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.NumberPassword),singleLine=true,enabled=!state.loading,modifier=Modifier.fillMaxWidth())}
-                    item {Button(onClick={vm.verifyCode(code)},enabled=!state.loading&&code.length==6,modifier=Modifier.fillMaxWidth()){Text("Verify and continue")}}
-                    item {TextButton(onClick={vm.requestCode(state.challengePhone?:phone)},enabled=!state.loading&&clock>=state.resendAt){Text(if(clock<state.resendAt)"Resend in ${((state.resendAt-clock+999)/1000).coerceAtLeast(0)}s" else "Resend verification code")}}
+                item {AppearanceToggle()}
+                item {
+                    Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(26.dp),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface)) {
+                        Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+                            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                                Surface(shape=RoundedCornerShape(14.dp),color=MaterialTheme.colorScheme.primaryContainer) {
+                                    Icon(MireliIcons.Lock,null,tint=MaterialTheme.colorScheme.primary,modifier=Modifier.padding(10.dp).size(20.dp))
+                                }
+                                Text("DRIVER ACCOUNT",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.primary,fontWeight=FontWeight.SemiBold)
+                            }
+                            Text("Sign in to drive",Modifier.testTag("driver_sign_in_title"),style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.SemiBold)
+                            Text(if(state.phoneSignInOpen==true&&state.registrationOpen!=true)"Use the number linked to your existing driver account. New applications are paused."
+                                else "Use your Kenyan mobile number to sign in or begin your driver application.",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                            OutlinedTextField(phone,{phone=it.take(20)},label={Text("Kenyan mobile number")},placeholder={Text("07XX XXX XXX")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Phone),singleLine=true,enabled=state.challengeId==null,modifier=Modifier.fillMaxWidth().testTag("driver_phone_field"))
+                            if(state.challengeId==null) {
+                                Button(onClick={vm.requestCode(phone)},enabled=!state.loading&&state.phoneSignInOpen==true&&phone.isNotBlank(),modifier=Modifier.fillMaxWidth().heightIn(min=54.dp).testTag("driver_send_code"),shape=RoundedCornerShape(16.dp)) {
+                                    Text(if(state.phoneSignInOpen==true)"Continue with phone" else if(state.loading)"Checking sign-in…" else "Sign-in unavailable")
+                                }
+                                Text("We’ll request a one-time SMS code only when phone sign-in is available.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                            } else {
+                                Text("Code requested for ${state.challengePhone}",style=MaterialTheme.typography.bodyMedium)
+                                TextButton(onClick={vm.changePhone();code=""},enabled=!state.loading){Text("Use a different number")}
+                                state.demoCode?.let {sample->Text("Sample verification code: $sample",style=MaterialTheme.typography.bodySmall)}
+                                OutlinedTextField(code,{code=it.filter(Char::isDigit).take(6)},label={Text("6-digit verification code")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.NumberPassword),singleLine=true,enabled=!state.loading,modifier=Modifier.fillMaxWidth())
+                                Button(onClick={vm.verifyCode(code)},enabled=!state.loading&&code.length==6,modifier=Modifier.fillMaxWidth().heightIn(min=52.dp),shape=RoundedCornerShape(16.dp)){Text("Verify and continue")}
+                                TextButton(onClick={vm.requestCode(state.challengePhone?:phone)},enabled=!state.loading&&clock>=state.resendAt){Text(if(clock<state.resendAt)"Resend in ${((state.resendAt-clock+999)/1000).coerceAtLeast(0)}s" else "Resend verification code")}
+                            }
+                        }
+                    }
                 }
-                item {Text("Your phone verifies access to your account. Your documents and vehicle still require compliance approval before you can take real work.")}
-                item {Text("Account help: mirelisgr001@gmail.com. Do not email identity documents.",style=MaterialTheme.typography.bodySmall)}
+                if(state.phoneSignInOpen!=true||state.registrationOpen!=true)item {
+                    Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(20.dp),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceVariant)) {
+                        Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                Icon(MireliIcons.Info,null,tint=MaterialTheme.colorScheme.primary,modifier=Modifier.size(20.dp))
+                                Text(when {state.error!=null->"Driver service unavailable";state.phoneSignInOpen==true->"New driver applications are paused";state.loading->"Connecting to driver sign-in";else->"Driver sign-in is not connected"},style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.SemiBold)
+                            }
+                            Text(state.error?:when {
+                                state.phoneSignInOpen==true&&state.registrationOpen!=true->"Existing drivers can sign in, but Mireli is not accepting new driver applications right now."
+                                state.loading->"Checking whether the live driver service can accept a sign-in request."
+                                else->state.serviceMessage?:"We can’t confirm phone sign-in at this server address yet."
+                            },style=MaterialTheme.typography.bodyMedium)
+                            Text("No SMS code has been sent. Checking service status does not send a code or determine driver eligibility.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                            OutlinedButton(onClick=vm::refreshServiceStatus,enabled=!state.loading,shape=RoundedCornerShape(14.dp)){Text("Retry connection")}
+                        }
+                    }
+                }
+                item {
+                    Card(Modifier.fillMaxWidth().testTag("driver_sign_in_promo"),shape=RoundedCornerShape(26.dp),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.primaryContainer)) {
+                        Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
+                            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                                Icon(MireliIcons.Train,null,tint=MaterialTheme.colorScheme.primary,modifier=Modifier.size(24.dp))
+                                Text("MOMBASA · SGR CONNECTION",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.primary,fontWeight=FontWeight.SemiBold)
+                            }
+                            Text("Make the SGR journey easier.",style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.SemiBold)
+                            Text("Join local drivers helping travellers connect with Mombasa’s SGR terminus.",style=MaterialTheme.typography.bodyLarge,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                            HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant)
+                            OnboardingStep("1","Verify your phone")
+                            OnboardingStep("2","Share driver and vehicle documents")
+                            OnboardingStep("3","Wait for compliance review")
+                            Text("Assignments become available only after your account and vehicle are approved.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+                item {TextButton(onClick={uriHandler.openUri("mailto:mirelisgr001@gmail.com")}){Icon(MireliIcons.HeadsetMic,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Contact driver support")}}
+                item {Text("Do not email identity documents. Upload them only through the private in-app flow when it is available.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
             }else {
                 item {Row(horizontalArrangement=Arrangement.spacedBy(10.dp)){OutlinedButton(onClick=vm::refresh,enabled=!state.loading){Text("Refresh account")};TextButton(onClick=vm::signOut,enabled=!state.loading){Text("Sign out")}}}
                 if(state.pendingTripAction)item {Card{Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){

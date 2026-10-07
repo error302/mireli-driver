@@ -31,6 +31,7 @@ proposal to reconcile with the cofounder's unversioned `/api/driver` design.
 
 | Endpoint | Required behavior |
 | --- | --- |
+| GET /api/v1/driver/status | Return environment identity plus separate `phoneSignInOpen` and `registrationOpen` flags. Sign-in must remain usable for existing drivers while new applications are paused. The status check itself never sends an SMS or decides eligibility. |
 | POST /api/v1/driver/auth/challenges | Generic response for registered and unknown phones; rate limits, cooldown, short-lived challenge; provider credentials stay on server |
 | POST /api/v1/driver/auth/sessions | Verify a single-use challenge, bind session to driver/install, return scoped bearer and expiry; never accept arbitrary four-digit codes |
 | DELETE /api/v1/driver/auth/session | Authenticated server revocation plus defined handling for owned pending commands |
@@ -52,6 +53,9 @@ proposal to reconcile with the cofounder's unversioned `/api/driver` design.
 - Eligibility is computed server-side from current driver, vehicle and policy.
   Changed/expired evidence blocks new assignments; active-trip incidents require
   safe dispatch handling, rather than an app forcing a roadside stop.
+- Do not use `registrationOpen` as an authentication switch. A returning driver
+  must be able to sign in during a pause in recruiting; the server still decides
+  whether an unknown number may begin an application after verification.
 - Catalogue requirements must be approved for Mireli's actual vehicle and operating
   model. Do not turn the test catalogue into a hard-coded legal assertion.
 - OTP secrets, document content and bearer tokens must not appear in logs.
