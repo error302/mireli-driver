@@ -45,9 +45,10 @@ returns an explicit unavailable response instead of silently creating fare setti
 
 1. Deploy the shared API after reconciling the actual PostgreSQL schema, migration
    history, backup and restore. Never reset the live database or run sample seeds.
-2. Configure and verify real phone OTP, private S3 document storage, malware scanning,
-   approved policy URLs and revocable staff authentication/role permissions.
-   Production passenger/admin prototype sign-in is deliberately blocked.
+2. Implement verified staff authentication and role permissions first, then configure
+   and verify phone OTP, private S3 document storage, malware scanning, a compliance
+   reviewer roster and approved policy URLs. Production admin prototype sign-in is
+   deliberately blocked; the API will keep driver intake closed until that changes.
 3. Enter approved real routes, coordinates, fares, operating rules and staff assignments.
    Approve legitimate drivers, vehicles and documents. No artificial jobs or balances.
 4. Verify M-Pesa collection and B2C settlement, beneficiary review, callback
