@@ -19,6 +19,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.mireli.driver.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -36,9 +37,9 @@ class ThemePreference(context:Context) {
 private val LightColors=lightColorScheme(
     primary=Color(0xFF007F79),onPrimary=Color.White,primaryContainer=Color(0xFFE5F2EF),onPrimaryContainer=Color(0xFF063555),
     secondary=Color(0xFF063555),onSecondary=Color.White,secondaryContainer=Color(0xFFDDF2EE),onSecondaryContainer=Color(0xFF063555),
-    background=Color(0xFFF3F5F8),onBackground=Color(0xFF142D40),surface=Color.White,onSurface=Color(0xFF142D40),
+    background=Color(0xFFF8FAFB),onBackground=Color(0xFF142D40),surface=Color.White,onSurface=Color(0xFF142D40),
     surfaceVariant=Color(0xFFEAF0F3),onSurfaceVariant=Color(0xFF5A6E7C),surfaceContainer=Color.White,surfaceContainerHighest=Color.White,
-    outline=Color(0xFF667E8E),outlineVariant=Color(0xFFD5E0E7))
+    outline=Color(0xFF617584),outlineVariant=Color(0xFFD5E0E7))
 private val DarkColors=darkColorScheme(
     primary=Color(0xFF70DDD0),onPrimary=Color(0xFF003F3B),primaryContainer=Color(0xFF153E3B),onPrimaryContainer=Color(0xFFBCF4EB),
     secondary=Color(0xFF9ACBF0),onSecondary=Color(0xFF063555),secondaryContainer=Color(0xFF183B42),onSecondaryContainer=Color(0xFFC2F0E9),
@@ -59,7 +60,7 @@ private val LocalAppearance=staticCompositionLocalOf<Appearance>{error("MireliTh
     SideEffect {
         (context as? ComponentActivity)?.enableEdgeToEdge(
             statusBarStyle=SystemBarStyle.auto(android.graphics.Color.TRANSPARENT,android.graphics.Color.TRANSPARENT){dark},
-            navigationBarStyle=SystemBarStyle.auto(0xE6F3F5F8.toInt(),0xE60B1722.toInt()){dark})
+            navigationBarStyle=SystemBarStyle.auto(0xE6F8FAFB.toInt(),0xE60B1722.toInt()){dark})
     }
     val appearance=Appearance(mode,saving,failed){choice->
         if(!saving && choice!=mode){saving=true;failed=false;scope.launch{
@@ -67,21 +68,24 @@ private val LocalAppearance=staticCompositionLocalOf<Appearance>{error("MireliTh
             catch(_:Exception){failed=true}finally{saving=false}
         }}
     }
-    MaterialTheme(colorScheme=if(dark)DarkColors else LightColors,shapes=Shapes(
-        small=androidx.compose.foundation.shape.RoundedCornerShape(12.dp),medium=androidx.compose.foundation.shape.RoundedCornerShape(20.dp),large=androidx.compose.foundation.shape.RoundedCornerShape(28.dp))) {
+    MaterialTheme(colorScheme=if(dark)DarkColors else LightColors,typography=Typography(
+        headlineMedium=androidx.compose.ui.text.TextStyle(fontSize=30.sp,lineHeight=36.sp,fontWeight=androidx.compose.ui.text.font.FontWeight.Bold,letterSpacing=(-0.8).sp),
+        titleLarge=androidx.compose.ui.text.TextStyle(fontSize=22.sp,lineHeight=28.sp,fontWeight=androidx.compose.ui.text.font.FontWeight.SemiBold),
+        titleMedium=androidx.compose.ui.text.TextStyle(fontSize=16.sp,lineHeight=22.sp,fontWeight=androidx.compose.ui.text.font.FontWeight.SemiBold)),shapes=Shapes(
+        extraSmall=androidx.compose.foundation.shape.RoundedCornerShape(12.dp),small=androidx.compose.foundation.shape.RoundedCornerShape(14.dp),medium=androidx.compose.foundation.shape.RoundedCornerShape(20.dp),large=androidx.compose.foundation.shape.RoundedCornerShape(28.dp))) {
         CompositionLocalProvider(LocalAppearance provides appearance){Box(Modifier.fillMaxSize().testTag(if(dark)"theme_dark" else "theme_light")){content()}}
     }
 }
 
 /** Shared control is available before sign-in, during onboarding and in the driver account. */
-@Composable fun AppearanceToggle() {
+@Composable fun AppearanceToggle(showSettings:Boolean=true) {
     val appearance=LocalAppearance.current
     val dark=when(appearance.mode){ThemeMode.SYSTEM->isSystemInDarkTheme();ThemeMode.DARK->true;ThemeMode.LIGHT->false}
     Row(Modifier.fillMaxWidth(),verticalAlignment=androidx.compose.ui.Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
         Text("Dark mode",Modifier.weight(1f),style=MaterialTheme.typography.bodyMedium)
         Switch(checked=dark,onCheckedChange={appearance.select(if(it)ThemeMode.DARK else ThemeMode.LIGHT)},enabled=!appearance.saving,
             modifier=Modifier.semantics{contentDescription="Dark mode"})
-        AppearanceButton()
+        if(showSettings)AppearanceButton()
     }
 }
 

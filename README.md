@@ -5,7 +5,7 @@ Kotlin, Jetpack Compose, Android API 36 target, API 26 minimum.
 
 ## Current status
 
-**0.5.0 is a navigation pilot build; live onboarding is not enabled yet.**
+**0.6.0 adds the reference-inspired driver UI; live onboarding still requires the deployed service.**
 The connected native screens implement phone verification, private document uploads,
 application submission and reviewer feedback, assigned trips, passenger-code boarding,
 partial boarding/no-show reports, journey completion, settlement statements,
@@ -37,6 +37,8 @@ the [0.4.2 verification and launch gates](docs/PILOT-0.4.2.md), the
 [Kenya legal and UX review](docs/KENYA-LEGAL-AND-UX-REVIEW-2026-10.md), and the
 [0.4.1 sign-in diagnosis](docs/PILOT-0.4.1.md), as well as the
 [0.4.0 implementation record](docs/PILOT-0.4.0.md).
+
+The [0.6.0 design verification record](docs/PILOT-0.6.0.md) describes the refreshed sign-in, approval-gated Home, account, earnings and journey screens. The original logo, light/dark choice and real-data-only pilot are retained.
 
 The [0.5.0 pilot APK and verification record](docs/PILOT-0.5.0.md) include the
 debug-signed test build, emulator results, checksum and remaining release gates.

@@ -30,14 +30,14 @@ class StagingServicesTest {
         val tripId=arguments.getString("fixtureTripId")!!;val bookingCode=arguments.getString("fixtureCode")!!
         rule.waitUntil(20000){rule.onAllNodes(hasText("Kenyan mobile number") and isEnabled()).fetchSemanticsNodes().isNotEmpty()}
         rule.onNodeWithText("Kenyan mobile number").performTextInput(phone!!)
-        rule.onNodeWithText("Send verification code").performScrollTo().assertIsEnabled().performClick()
+        rule.onNodeWithTag("driver_send_code").performScrollTo().assertIsEnabled().performClick()
         rule.waitUntil(30000){rule.onAllNodesWithText("Sample verification code:",substring=true).fetchSemanticsNodes().isNotEmpty()}
         val sample=rule.onNodeWithText("Sample verification code:",substring=true).fetchSemanticsNode().config[SemanticsProperties.Text].joinToString(" ")
         rule.onNodeWithText("6-digit verification code").performTextInput(Regex("[0-9]{6}").find(sample)!!.value)
         closeSoftKeyboard()
         rule.onNodeWithText("Verify and continue").performScrollTo().assertIsEnabled().performClick()
-        rule.waitUntil(30000){rule.onAllNodesWithText("Eligible for new assignments").fetchSemanticsNodes().isNotEmpty()}
-        rule.onNodeWithText("Today",useUnmergedTree=true).performClick()
+        rule.waitUntil(30000){rule.onAllNodesWithText("Ready for your next journey").fetchSemanticsNodes().isNotEmpty()}
+        rule.onNodeWithText("Trips",useUnmergedTree=true).performClick()
         reveal("Accept assignment");screenshot("connected-assignment")
         reveal("Accept assignment");rule.onNodeWithText("Accept assignment").performClick();rule.onNodeWithText("Confirm").performClick()
         rule.waitUntil(30000){rule.onAllNodesWithText("Arrived at pickup").fetchSemanticsNodes().isNotEmpty()}
@@ -68,7 +68,7 @@ class StagingServicesTest {
         val phone="+254700"+System.currentTimeMillis().toString().takeLast(6)
         rule.waitUntil(20000){rule.onAllNodes(hasText("Kenyan mobile number") and isEnabled()).fetchSemanticsNodes().isNotEmpty()}
         rule.onNodeWithText("Kenyan mobile number").performTextInput(phone)
-        rule.onNodeWithText("Send verification code").performScrollTo().assertIsEnabled().performClick()
+        rule.onNodeWithTag("driver_send_code").performScrollTo().assertIsEnabled().performClick()
         rule.waitUntil(30000){rule.onAllNodesWithText("Sample verification code:",substring=true).fetchSemanticsNodes().isNotEmpty()}
         val sampleText=rule.onNodeWithText("Sample verification code:",substring=true).fetchSemanticsNode().config[SemanticsProperties.Text].joinToString(" ")
         val code=Regex("[0-9]{6}").find(sampleText)!!.value
@@ -76,6 +76,7 @@ class StagingServicesTest {
         closeSoftKeyboard()
         rule.onNodeWithText("Verify and continue").performScrollTo().assertIsEnabled().performClick()
         rule.waitUntil(30000){rule.onAllNodes(hasText("Sign out") and isEnabled()).fetchSemanticsNodes().isNotEmpty()}
+        rule.onNodeWithText("Account",useUnmergedTree=true).performClick()
         listOf("Driver full name" to "Sample Native Driver","Registration plate" to "DEMO 030","Passenger seats" to "10","Licence class" to "D1","Vehicle type" to "Sample shuttle").forEach{(label,value)->
             reveal(label);rule.onNodeWithText(label).performScrollTo().assertIsEnabled().performTextReplacement(value)
         }

@@ -47,8 +47,11 @@ fun OnboardingScreen(onClose: () -> Unit, vm: OnboardingViewModel = viewModel())
         LazyColumn(Modifier.fillMaxSize().padding(padding).imePadding(), contentPadding = PaddingValues(22.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
             item {
-                Text("Become a Mireli driver", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                AppearanceButton()
+                DriverBrandHeader("Driver application")
+                Spacer(Modifier.height(20.dp))
+                DriverHeading("Let’s set up your account", "Your driver profile, vehicle and supporting documents.")
+                Spacer(Modifier.height(20.dp))
+                DriverStepProgress(step,listOf("Your profile", "Upload", "Review"))
                 Text("${step + 1} of 3 · ${listOf("Driver & vehicle", "Documents", "Review")[step]}", color = MaterialTheme.colorScheme.primary)
                 LinearProgressIndicator(progress = { (step + 1) / 3f }, modifier = Modifier.fillMaxWidth().padding(top = 12.dp))
             }

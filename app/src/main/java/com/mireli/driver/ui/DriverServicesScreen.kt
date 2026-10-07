@@ -44,7 +44,7 @@ private fun JSONArray.objects()=(0 until length()).map {getJSONObject(it)}
 @Composable fun DriverServicesScreen(onClose:(()->Unit)?=null,vm:DriverServicesViewModel=viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
     var phone by rememberSaveable {mutableStateOf("")};var code by rememberSaveable {mutableStateOf("")}
-    var section by rememberSaveable {mutableIntStateOf(0)};var accepted by rememberSaveable {mutableStateOf(false)}
+    var section by rememberSaveable {mutableIntStateOf(4)};var accepted by rememberSaveable {mutableStateOf(false)}
     var supportCategory by rememberSaveable {mutableStateOf("payout")};var supportMessage by rememberSaveable {mutableStateOf("")}
     var payoutName by rememberSaveable {mutableStateOf("")};var payoutAcknowledged by rememberSaveable {mutableStateOf(false)}
     var tripHistory by rememberSaveable {mutableStateOf(false)}
@@ -57,45 +57,47 @@ private fun JSONArray.objects()=(0 until length()).map {getJSONObject(it)}
     LaunchedEffect(state.supportSent){if(state.supportSent>0){supportMessage="";focus.clearFocus();keyboard?.hide()}}
     val picker=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){uri->val type=selectedType;selectedType=null;if(uri!=null&&type!=null)vm.upload(type,selectedExpiry,uri)}
     val onboarding=state.onboarding;val app=onboarding?.getJSONObject("application")
-    Scaffold(bottomBar={if(state.signedIn)NavigationBar {
-        NavigationBarItem(section==3,{section=3},icon={Icon(MireliIcons.Route,null)},label={Text("Today")})
-        NavigationBarItem(section==0,{section=0},icon={Icon(MireliIcons.PersonOutline,null)},label={Text("Onboarding")})
+    Scaffold(bottomBar={if(state.signedIn)NavigationBar(containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp) {
+        NavigationBarItem(section==4,{section=4},icon={Icon(MireliIcons.GridView,null)},label={Text("Home")})
+        NavigationBarItem(section==3,{section=3},icon={Icon(MireliIcons.Route,null)},label={Text("Trips")})
+        NavigationBarItem(section==0,{section=0},icon={Icon(MireliIcons.PersonOutline,null)},label={Text("Account")})
         NavigationBarItem(section==1,{section=1},icon={Icon(MireliIcons.AccountBalanceWallet,null)},label={Text("Earnings")})
         NavigationBarItem(section==2,{section=2},icon={Icon(MireliIcons.HeadsetMic,null)},label={Text("Support")})
     }}){padding->
         LazyColumn(Modifier.fillMaxSize().padding(padding).imePadding(),state=listState,contentPadding=PaddingValues(horizontal=20.dp,vertical=16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
-            item {Row(horizontalArrangement=Arrangement.spacedBy(12.dp),verticalAlignment=Alignment.CenterVertically){Image(painterResource(R.drawable.mireli_driver_logo),"Mireli",Modifier.size(46.dp));Column{Text("Mireli Driver",style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold);Text(if(state.signedIn)"Your driver account" else "Mombasa · SGR transfers",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)}}}
-            if(state.signedIn)item {AppearanceToggle()}
+            item {DriverBrandHeader(if(state.signedIn) "Driver account" else "Mombasa · SGR transfers")}
             if(onClose!=null)item {TextButton(onClick=onClose){Text("Back to preview")}}
             if(BuildConfig.DRIVER_SERVICE_TEST)item {Card {Text("STAGING · Test data; no real SMS or payouts.",Modifier.padding(16.dp))}}
             if(state.loading)item {LinearProgressIndicator(Modifier.fillMaxWidth())}
             state.error?.takeIf{state.signedIn||state.registrationOpen==true}?.let {error->item {Card(colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.errorContainer)){Text(error,Modifier.padding(16.dp),color=MaterialTheme.colorScheme.onErrorContainer)}} }
             if(!state.signedIn) {
-                item {AppearanceToggle()}
+                item {AppearanceToggle(showSettings=false)}
                 item {
-                    Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(26.dp),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface)) {
-                        Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+                    Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(28.dp),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface)) {
+                        Column(Modifier.padding(24.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
                             Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                                 Surface(shape=RoundedCornerShape(14.dp),color=MaterialTheme.colorScheme.primaryContainer) {
                                     Icon(MireliIcons.Lock,null,tint=MaterialTheme.colorScheme.primary,modifier=Modifier.padding(10.dp).size(20.dp))
                                 }
-                                Text("DRIVER ACCOUNT",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.primary,fontWeight=FontWeight.SemiBold)
+                                Text("EARN. DRIVE. GROW.",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.primary,fontWeight=FontWeight.SemiBold)
                             }
-                            Text("Sign in to drive",Modifier.testTag("driver_sign_in_title"),style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.SemiBold)
+                            Text("Sign in to drive",Modifier.testTag("driver_sign_in_title"),style=MaterialTheme.typography.headlineMedium)
                             Text(if(state.phoneSignInOpen==true&&state.registrationOpen!=true)"Use the number linked to your existing driver account. New applications are paused."
                                 else "Use your Kenyan mobile number to sign in or begin your driver application.",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
                             OutlinedTextField(phone,{phone=it.take(20)},label={Text("Kenyan mobile number")},placeholder={Text("07XX XXX XXX")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Phone),singleLine=true,enabled=state.challengeId==null,modifier=Modifier.fillMaxWidth().testTag("driver_phone_field"))
                             if(state.challengeId==null) {
-                                Button(onClick={vm.requestCode(phone)},enabled=!state.loading&&state.phoneSignInOpen==true&&phone.isNotBlank(),modifier=Modifier.fillMaxWidth().heightIn(min=54.dp).testTag("driver_send_code"),shape=RoundedCornerShape(16.dp)) {
+                                Button(onClick={vm.requestCode(phone)},enabled=!state.loading&&state.phoneSignInOpen==true&&phone.isNotBlank(),modifier=Modifier.fillMaxWidth().heightIn(min=54.dp).testTag("driver_send_code"),shape=RoundedCornerShape(28.dp)) {
                                     Text(if(state.phoneSignInOpen==true)"Continue with phone" else if(state.loading)"Checking sign-in…" else "Sign-in unavailable")
                                 }
                                 Text("We’ll request a one-time SMS code only when phone sign-in is available.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                             } else {
+                                DriverStepProgress(0,listOf("Verify phone","Documents","Review"))
+                                Text("Check your messages",style=MaterialTheme.typography.titleLarge)
                                 Text("Code requested for ${state.challengePhone}",style=MaterialTheme.typography.bodyMedium)
                                 TextButton(onClick={vm.changePhone();code=""},enabled=!state.loading){Text("Use a different number")}
                                 state.demoCode?.let {sample->Text("Sample verification code: $sample",style=MaterialTheme.typography.bodySmall)}
-                                OutlinedTextField(code,{code=it.filter(Char::isDigit).take(6)},label={Text("6-digit verification code")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.NumberPassword),singleLine=true,enabled=!state.loading,modifier=Modifier.fillMaxWidth())
-                                Button(onClick={vm.verifyCode(code)},enabled=!state.loading&&code.length==6,modifier=Modifier.fillMaxWidth().heightIn(min=52.dp),shape=RoundedCornerShape(16.dp)){Text("Verify and continue")}
+                                OutlinedTextField(code,{code=it.filter(Char::isDigit).take(6)},textStyle=MaterialTheme.typography.headlineMedium.copy(letterSpacing=androidx.compose.ui.unit.TextUnit(8f,androidx.compose.ui.unit.TextUnitType.Sp)),label={Text("6-digit verification code")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.NumberPassword),singleLine=true,enabled=!state.loading,modifier=Modifier.fillMaxWidth())
+                                Button(onClick={vm.verifyCode(code)},enabled=!state.loading&&code.length==6,modifier=Modifier.fillMaxWidth().heightIn(min=52.dp),shape=RoundedCornerShape(28.dp)){Text("Verify and continue")}
                                 TextButton(onClick={vm.requestCode(state.challengePhone?:phone)},enabled=!state.loading&&clock>=state.resendAt){Text(if(clock<state.resendAt)"Resend in ${((state.resendAt-clock+999)/1000).coerceAtLeast(0)}s" else "Resend verification code")}
                             }
                         }
@@ -144,7 +146,25 @@ private fun JSONArray.objects()=(0 until length()).map {getJSONObject(it)}
                     Text("The app keeps the same action ID after a connection failure or restart. Check it before making another trip change.")
                     Button(onClick=vm::retryTripAction,enabled=!state.loading){Text("Check saved action")}
                 }}}
-                if(section==0&&onboarding!=null&&app!=null) {
+                if(section==4) {
+                    item {Column(verticalArrangement=Arrangement.spacedBy(16.dp)) {
+                        DriverHomeOverview(onboarding?.optJSONObject("profile"),app,state.eligibility?.optBoolean("eligible")==true,
+                            state.trips?.optJSONArray("trips")?.objects(),state.loading){section=it}
+                    }}
+                    val activeTrip=state.trips?.optJSONArray("trips")?.objects()?.firstOrNull{it.optString("phase") in listOf("accepted","at_pickup","in_progress")}
+                    if(activeTrip!=null)item {
+                        Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface)) {
+                            Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+                                Text("Your active journey",style=MaterialTheme.typography.titleLarge)
+                                Text(activeTrip.getString("routeName"),color=MaterialTheme.colorScheme.onSurfaceVariant)
+                                TripNavigation(activeTrip,onRequestRoute=vm::navigationRoute)
+                                OutlinedButton(onClick={section=3},modifier=Modifier.fillMaxWidth()){Text("Open journey & passengers")}
+                            }
+                        }
+                    }
+                }else if(section==0&&onboarding!=null&&app!=null) {
+                    item {DriverHeading("Driver account","Manage your profile, vehicle and documents.");AppearanceToggle(showSettings=false)}
+                    item {DriverStepProgress(if(app.getString("status")=="approved")2 else 1,listOf("Phone verified","Documents","Review"))}
                     item {Card {Column(Modifier.padding(16.dp)) {
                         Text("Application: ${app.getString("status").replace('_',' ')}",style=MaterialTheme.typography.titleMedium)
                         Text(if(state.eligibility?.optBoolean("eligible")==true)"Eligible for new assignments" else "Approval required before new assignments")
@@ -171,8 +191,9 @@ private fun JSONArray.objects()=(0 until length()).map {getJSONObject(it)}
                         Button(onClick={vm.submit(accepted)},enabled=!state.loading&&accepted&&app.getString("status") in listOf("draft","changes_requested"),modifier=Modifier.fillMaxWidth()){Text("Submit for compliance review")}
                     }}
                 }else if(section==1) {
-                    item {Text("Earnings & payouts",style=MaterialTheme.typography.titleLarge);Text("Paid amounts have confirmed settlement. Processing transfers still await confirmation.")}
+                    item {DriverHeading("Earnings & payouts","Track each settlement and your payout destination.")}
                     state.earnings?.let{statement->
+                        item {DriverEarningsHero("Confirmed paid earnings",statement.getJSONArray("totals").objects().filter{it.getString("status")=="completed"}.sumOf{it.getLong("netMinor")},"Returned statement totals · pending transfers are shown separately below")}
                         item {Text("Payout destination: ${statement.optString("destinationMasked","Not set")}")}
                         val destination=statement.getJSONObject("destination")
                         item {Card{Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
@@ -197,7 +218,7 @@ private fun JSONArray.objects()=(0 until length()).map {getJSONObject(it)}
                 }else if(section==3) {
                     val allTrips=state.trips?.getJSONArray("trips")?.objects()?:emptyList()
                     val visibleTrips=allTrips.filter{(it.getString("phase") in listOf("completed","cancelled"))==tripHistory}
-                    item {Text(if(tripHistory)"Recent trip history" else "Your assignments",style=MaterialTheme.typography.titleLarge);Text("Refresh for the latest bookings. Use Support for dispatch changes.");TextButton(onClick={tripHistory=!tripHistory}){Text(if(tripHistory)"Show active assignments" else "View recent trip history")}}
+                    item {DriverHeading(if(tripHistory)"Recent trip history" else "Your assignments","Mombasa SGR transfers assigned to your account.");TextButton(onClick={tripHistory=!tripHistory}){Text(if(tripHistory)"Show active assignments" else "View recent trip history")}}
                     if(state.eligibility?.optBoolean("eligible")!=true)item {Card{Text("Current document approval is required to accept, board or start. Your application status is available under Onboarding.",Modifier.padding(16.dp))}}
                     items(visibleTrips,key={it.getString("id")}){trip->
                         LiveTripCard(trip,state.loading||state.pendingTripAction,state.eligibility?.optBoolean("eligible")==true,vm::tripCommand,vm::navigationRoute)
@@ -209,7 +230,7 @@ private fun JSONArray.objects()=(0 until length()).map {getJSONObject(it)}
                         if(!tripHistory&&state.eligibility?.optBoolean("eligible")!=true)OutlinedButton(onClick={section=0}){Text("Continue onboarding")}
                     }}}
                 }else if(section==2) {
-                    item {Text("Driver support",style=MaterialTheme.typography.titleLarge);Text("Create a case for a document, account or payout issue. This is not an emergency channel; contact local emergency services directly if immediate help is needed.")}
+                    item {DriverHeading("How can we help?","Your account, documents and payouts.");Text("Create a case for a document, account or payout issue. This is not an emergency channel; contact local emergency services directly if immediate help is needed.")}
                     if(state.supportSent>0)item {Text("Support case sent. Mireli's replies appear below.",color=MaterialTheme.colorScheme.primary)}
                     item {Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){listOf("payout","documents","account").forEach{category->FilterChip(selected=supportCategory==category,onClick={supportCategory=category},label={Text(category.replaceFirstChar{it.uppercase()})})}}}
                     item {OutlinedTextField(supportMessage,{supportMessage=it.take(2000)},label={Text("How can we help?")},modifier=Modifier.fillMaxWidth(),minLines=3,enabled=!state.loading)}

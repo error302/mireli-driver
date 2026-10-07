@@ -3,6 +3,9 @@ package com.mireli.driver.ui
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -24,14 +27,26 @@ import java.time.format.DateTimeFormatter
     var reason by rememberSaveable(id,trip.getInt("version")){mutableStateOf("")}
     val canAct=!busy&&eligible
     val passengers=trip.getJSONArray("passengers")
-    Card(Modifier.fillMaxWidth()) {Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+    Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(26.dp),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface)) {Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
+        Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            Icon(MireliIcons.Train,null,tint=MaterialTheme.colorScheme.primary,modifier=Modifier.size(20.dp))
+            Text(if(phase=="completed")"Trip completed" else if(phase=="assigned")"New assignment" else "SGR transfer",style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary)
+        }
         Text(trip.getString("routeName"),style=MaterialTheme.typography.titleLarge)
         Text("${trip.getString("serviceType").replaceFirstChar{it.uppercase()}} · ${phase.replace('_',' ')}")
         val reporting=runCatching {DateTimeFormatter.ofPattern("EEE d MMM · HH:mm").withZone(ZoneId.of("Africa/Nairobi")).format(Instant.parse(trip.getString("departureAt")))}.getOrDefault(trip.getString("departureAt"))
-        Text("Departure: $reporting EAT")
+        Surface(shape=RoundedCornerShape(12.dp),color=MaterialTheme.colorScheme.surfaceVariant) {Text("Departure: $reporting EAT",Modifier.padding(12.dp),style=MaterialTheme.typography.labelLarge)}
         Text(if(trip.getString("direction")=="TO_TERMINUS")"To Mombasa SGR Terminus" else "From Mombasa SGR Terminus")
+        if(phase=="completed") {
+            Surface(shape=RoundedCornerShape(16.dp),color=MaterialTheme.colorScheme.primaryContainer) {
+                Row(Modifier.padding(16.dp),horizontalArrangement=Arrangement.spacedBy(12.dp),verticalAlignment=Alignment.CenterVertically) {
+                    Icon(MireliIcons.CheckCircleOutline,null,tint=MaterialTheme.colorScheme.primary)
+                    Text("Journey recorded. Check Earnings for settlement status.",color=MaterialTheme.colorScheme.onPrimaryContainer)
+                }
+            }
+        }
         if(phase=="assigned") {
-            Button(onClick={action="accept"},enabled=canAct,modifier=Modifier.fillMaxWidth()){Text("Accept assignment")}
+            Button(onClick={action="accept"},enabled=canAct,modifier=Modifier.fillMaxWidth().heightIn(min=54.dp),shape=RoundedCornerShape(28.dp)){Text("Accept assignment")}
             TextButton(onClick={action="decline"},enabled=canAct){Text("Decline with a reason")}
         }
         if(phase=="accepted")Button(onClick={action="arrive"},enabled=canAct,modifier=Modifier.fillMaxWidth()){Text("Arrived at pickup")}
@@ -57,8 +72,8 @@ import java.time.format.DateTimeFormatter
                 TextButton(onClick={booking=p;reason="";action="no_show"},enabled=canAct){Text("Report remaining seats as no-show")}
             }
         }
-        if(phase=="at_pickup")Button(onClick={action="start"},enabled=canAct,modifier=Modifier.fillMaxWidth()){Text("Start journey")}
-        if(phase=="in_progress")Button(onClick={action="complete"},enabled=!busy,modifier=Modifier.fillMaxWidth()){Text("Complete delivered journey")}
+        if(phase=="at_pickup")Button(onClick={action="start"},enabled=canAct,modifier=Modifier.fillMaxWidth().heightIn(min=54.dp),shape=RoundedCornerShape(28.dp)){Text("Start journey")}
+        if(phase=="in_progress")Button(onClick={action="complete"},enabled=!busy,modifier=Modifier.fillMaxWidth().heightIn(min=54.dp),shape=RoundedCornerShape(28.dp)){Text("Complete delivered journey")}
         Text("Reference: $id",style=MaterialTheme.typography.bodySmall)
     }}
     action?.let{selected->AlertDialog(onDismissRequest={action=null},title={Text(when(selected){"board"->"Confirm boarding";"no_show"->"Report a no-show";"complete"->"Confirm delivery";else->selected.replace('_',' ').replaceFirstChar{it.uppercase()}})},text={Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {

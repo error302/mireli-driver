@@ -40,7 +40,7 @@ class AppearanceTest {
         rule.onNodeWithText("Earnings",useUnmergedTree=true).performClick();screenshot("dark-earnings")
         rule.onNodeWithText("Account",useUnmergedTree=true).performClick()
         rule.onNode(hasScrollAction()).performScrollToNode(hasText("Driver onboarding & documents"));rule.onNodeWithText("Driver onboarding & documents").performClick()
-        rule.onNodeWithTag("theme_dark").assertExists();rule.onNodeWithText("Become a Mireli driver").assertExists()
+        rule.onNodeWithTag("theme_dark").assertExists();rule.onNodeWithText("Let’s set up your account").assertExists()
         rule.waitUntil(15000){rule.onAllNodes(hasText("Full name") and isEnabled()).fetchSemanticsNodes().isNotEmpty()}
         rule.onNodeWithText("Full name").performTextInput("Appearance Test Driver");androidx.test.espresso.Espresso.closeSoftKeyboard()
         rule.onNode(hasScrollAction()).performScrollToNode(hasText("Appearance"))
@@ -48,7 +48,7 @@ class AppearanceTest {
         choose("Dark",ThemeMode.DARK);rule.onNodeWithText("Appearance Test Driver").assertExists();screenshot("dark-onboarding")
         rule.onNodeWithText("Back").performClick()
         rule.onNode(hasScrollAction()).performScrollToNode(hasText("Connect driver account & payouts"));rule.onNodeWithText("Connect driver account & payouts").performClick()
-        rule.onNodeWithTag("theme_dark").assertExists();rule.onNodeWithText("Sign in or apply to drive").assertExists();screenshot("dark-sign-in")
+        rule.onNodeWithTag("theme_dark").assertExists();rule.onNodeWithText("Sign in to drive").assertExists();screenshot("dark-sign-in")
         choose("Light",ThemeMode.LIGHT);rule.onNodeWithTag("theme_light").assertExists();screenshot("light-sign-in")
         rule.activityRule.scenario.recreate();rule.onNodeWithTag("theme_light").assertExists()
         choose("System",ThemeMode.SYSTEM)
