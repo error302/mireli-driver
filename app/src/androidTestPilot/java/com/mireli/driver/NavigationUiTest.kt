@@ -17,16 +17,16 @@ class NavigationUiTest {
     private fun trip()=JSONObject("""{"id":"navigation-test","direction":"TO_TERMINUS","phase":"in_progress","stages":[{"id":"t","name":"SGR Terminus","latitude":-4.01,"longitude":39.60},{"id":"c","name":"Coast stop","latitude":-4.04,"longitude":39.70}]}""")
     @Test fun destinationAndStopSelectionSendOnlyTheExpectedMapsUrl(){
         var opened:String?=null
-        rule.setContent{MireliTheme{Surface{Column{TripNavigation(trip()){opened=it;true}}}}}
-        rule.onNodeWithText("Navigate to destination").performClick()
+        rule.setContent{MireliTheme{Surface{Column{TripNavigation(trip(),onNavigate={opened=it;true})}}}}
+        rule.onNodeWithText("Open destination in Google Maps").performClick()
         assertTrue(opened!!.contains("destination=-4.01%2C39.6"))
-        rule.onNodeWithText("Choose a route stop").performClick()
         rule.onNodeWithText("Coast stop").performClick()
+        rule.onNodeWithText("Open destination in Google Maps").performClick()
         assertTrue(opened!!.contains("destination=-4.04%2C39.7"))
     }
     @Test fun missingMapsHandlerShowsAnActionableError(){
-        rule.setContent{MireliTheme{Surface{Column{TripNavigation(trip()){false}}}}}
-        rule.onNodeWithText("Navigate to destination").performClick()
+        rule.setContent{MireliTheme{Surface{Column{TripNavigation(trip(),onNavigate={false})}}}}
+        rule.onNodeWithText("Open destination in Google Maps").performClick()
         rule.onNodeWithText("No maps app or browser could open. Install one and try again.").assertExists()
     }
 }

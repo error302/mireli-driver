@@ -200,7 +200,7 @@ private fun JSONArray.objects()=(0 until length()).map {getJSONObject(it)}
                     item {Text(if(tripHistory)"Recent trip history" else "Your assignments",style=MaterialTheme.typography.titleLarge);Text("Refresh for the latest bookings. Use Support for dispatch changes.");TextButton(onClick={tripHistory=!tripHistory}){Text(if(tripHistory)"Show active assignments" else "View recent trip history")}}
                     if(state.eligibility?.optBoolean("eligible")!=true)item {Card{Text("Current document approval is required to accept, board or start. Your application status is available under Onboarding.",Modifier.padding(16.dp))}}
                     items(visibleTrips,key={it.getString("id")}){trip->
-                        LiveTripCard(trip,state.loading||state.pendingTripAction,state.eligibility?.optBoolean("eligible")==true,vm::tripCommand)
+                        LiveTripCard(trip,state.loading||state.pendingTripAction,state.eligibility?.optBoolean("eligible")==true,vm::tripCommand,vm::navigationRoute)
                     }
                     if(visibleTrips.isEmpty())item {Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface)){Column(Modifier.padding(24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
                         Icon(MireliIcons.Route,null,tint=MaterialTheme.colorScheme.primary,modifier=Modifier.size(32.dp))

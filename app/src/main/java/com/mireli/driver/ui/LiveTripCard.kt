@@ -14,7 +14,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-@Composable fun LiveTripCard(trip:JSONObject,busy:Boolean,eligible:Boolean,command:(JSONObject,String,JSONObject)->Unit) {
+@Composable fun LiveTripCard(trip:JSONObject,busy:Boolean,eligible:Boolean,command:(JSONObject,String,JSONObject)->Unit,routeRequest:RouteRequest?=null) {
     val id=trip.getString("id");val phase=trip.getString("phase");val context=LocalContext.current
     var expanded by rememberSaveable(id){mutableStateOf(false)}
     var action by rememberSaveable(id,trip.getInt("version")){mutableStateOf<String?>(null)}
@@ -36,7 +36,7 @@ import java.time.format.DateTimeFormatter
         }
         if(phase=="accepted")Button(onClick={action="arrive"},enabled=canAct,modifier=Modifier.fillMaxWidth()){Text("Arrived at pickup")}
         if(phase in listOf("accepted","at_pickup","in_progress")) {
-            TripNavigation(trip)
+            TripNavigation(trip,onRequestRoute=routeRequest)
             TextButton(onClick={expanded=!expanded}){Text(if(expanded)"Hide manifest" else "View passenger manifest")}
         }
         if(expanded)for(index in 0 until passengers.length()) {

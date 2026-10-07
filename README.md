@@ -5,7 +5,7 @@ Kotlin, Jetpack Compose, Android API 36 target, API 26 minimum.
 
 ## Current status
 
-**0.4.2 is a fresh pilot build; live onboarding is not enabled yet.**
+**0.5.0 is a navigation pilot build; live onboarding is not enabled yet.**
 The connected native screens implement phone verification, private document uploads,
 application submission and reviewer feedback, assigned trips, passenger-code boarding,
 partial boarding/no-show reports, journey completion, settlement statements,
@@ -24,13 +24,22 @@ Use the **Dark mode** switch, or tap **Appearance** for **Light**, **Dark** or
 phone, survives app restarts and applies to trips, onboarding, sign-in, earnings,
 support, dialogs and system bars. Appearance is available before sign-in.
 
-Connected trip cards open Google Maps directions to the route pickup, destination
-or a selected stop, respecting inbound/outbound travel. This is external navigation;
-embedded maps, continuous location sharing and push dispatch are not implemented.
-See [0.4.2 verification and launch gates](docs/PILOT-0.4.2.md), the
+Connected trip cards now include an in-app MapLibre map with OpenStreetMap data,
+foreground-only location permission after an explicit disclosure, assigned-stop
+selection, route geometry, written maneuvers, estimated arrival and off-route
+recalculation when Mireli's authenticated Valhalla route service is configured.
+Google Maps remains an explicit fallback. The live API currently returns 404 and
+the Valhalla service is not configured, so this pilot does not yet have live route
+instructions. It does not continuously upload driver location or request background
+location permission. See the [open-source maps and routing setup](docs/OPEN-SOURCE-NAVIGATION.md),
+the [production-readiness checklist](docs/PRODUCTION-READINESS-CHECKLIST-2026-10.md),
+the [0.4.2 verification and launch gates](docs/PILOT-0.4.2.md), the
 [Kenya legal and UX review](docs/KENYA-LEGAL-AND-UX-REVIEW-2026-10.md), and the
 [0.4.1 sign-in diagnosis](docs/PILOT-0.4.1.md), as well as the
 [0.4.0 implementation record](docs/PILOT-0.4.0.md).
+
+The [0.5.0 pilot APK and verification record](docs/PILOT-0.5.0.md) include the
+debug-signed test build, emulator results, checksum and remaining release gates.
 
 Passenger website: https://mireli-tau.vercel.app/
 
@@ -86,5 +95,5 @@ it. This is a local test authority, not a production network outbox or WorkManag
 - [Brand provenance](assets/brand/README.md)
 
 The permanent application ID, privacy/terms, business verification, backend,
-maps/location, support coverage, payments and field-test evidence must be
+Valhalla/tile hosting, location field tests, support coverage, payments and field-test evidence must be
 completed before commercial use. No parity with Uber/Bolt is claimed.

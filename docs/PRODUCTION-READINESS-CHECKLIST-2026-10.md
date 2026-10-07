@@ -11,13 +11,31 @@
 - [x] The app distinguishes a status check from an OTP request; the status check does not claim to send an SMS.
 - [x] Local backend code separates existing-driver phone sign-in from new-driver application intake. Unit tests, typecheck and lint passed locally.
 - [x] The pilot targets Android API 36.
+- [x] Active-trip navigation now includes a MapLibre in-app map, OSM/OpenFreeMap attribution, foreground location permission, assigned-stop selection and an authenticated Valhalla route endpoint with server-side trip authorization and rate limiting.
+- [x] Version 0.5.0 pilot APK built and debug signature verified; unit tests and Android lint pass. The minified production AAB build also completes locally but is unsigned. See [pilot verification](PILOT-0.5.0.md).
+- [x] Three Android UI test methods passed through direct AndroidJUnitRunner execution on the Android 17/API 37 emulator, and a first-screen screenshot confirms driver sign-in appears at launch.
+- [ ] The Gradle connected-test wrapper and normal release-device matrix pass. `:app:connectedPilotDebugAndroidTest` failed before collecting tests (zero recorded tests); rerun on a stable supported emulator and physical Android devices.
+- [ ] In-app turn guidance is operational. `VALHALLA_URL` and a server-only `VALHALLA_API_TOKEN` are not configured; the live API remains 404. The pilot uses OpenFreeMap's public style and needs real-device route/GPS tests.
 - [ ] The live driver status URL is available. `https://mireli-tau.vercel.app/api/v1/driver/status` returned HTTP 404 on 7 October 2026.
 - [ ] Real OTP, new-driver registration, private document submission/review, trip assignment, payment and payout have passed end-to-end tests.
-- [ ] A production-signed Android App Bundle and Play Console submission are complete. The available APK is debug-signed and for testing only.
-- [ ] Emulator UI instrumentation completed. The last run ended in a device startup ANR, so this evidence is still missing.
+- [ ] A production-signed Android App Bundle and Play Console submission are complete. The available APK is debug-signed and for testing only; the locally built AAB is unsigned.
 - [ ] The recent source commits have reached GitHub. Pushes failed with HTTP 500 and GitHub API requests returned 401; they are committed only in the local checkouts.
 
 Do not enter fake, seeded, or demo drivers, trips, documents, earnings, payments or approvals into production. Keep test data and provider test credentials in a separate staging environment.
+
+## Live deployment diagnosis (verified 7 October 2026)
+
+- `https://mireli-tau.vercel.app/` responds, but `/api/v1/driver/status` and `/api/v1/driver/auth/challenges` return HTTP 404. The app cannot sign in or request an OTP while those routes are absent from the deployed production build.
+- The Vercel `msafiri` production deployment is attached to `main` at `687ef7a`; that revision does not contain `src/app/api/v1/driver/[...path]/route.ts`. The `feat/mireli-alignment` branch does contain it. This is a production-branch/source mismatch, not evidence that Vercel itself is down. Vercel serves production from its configured production branch and treats other branches as previews ([Vercel Git deployments](https://vercel.com/docs/git)).
+- A feature preview was marked Ready, but direct API requests receive Vercel's authentication page because preview deployment protection is enabled. Keep that protection; a protected preview URL is not a production API URL and must not be put into the driver app.
+- A later build attempt at `0b983a3` failed typechecking because the unused `examples/websocket` files import missing `socket.io` and `socket.io-client` packages. The follow-up `610dc87` excludes those examples from the app typecheck; later previews were marked Ready. Verify the exact candidate commit with a fresh build before promotion.
+- The selected Vercel environment-variable listing showed `DATABASE_URL`; no secret values were opened. This does not establish that OTP, document storage, scanning, or navigation credentials are configured. The backend requires a `DRIVER_AUTH_SECRET` of at least 32 characters plus Africa's Talking `AT_USERNAME` and `AT_API_KEY` for real driver phone sign-in.
+- New-driver registration is deliberately closed in source: production staff/reviewer authentication is not implemented, the admin-auth route returns 503 outside local demo mode, and the readiness gate also requires a private-document bucket, scanner, reviewer allowlist, current policy version, and HTTPS privacy/terms URLs. Do not bypass the gate by changing its hard-coded reviewer-authentication flag; complete and security-review staff authentication first.
+- The saved GitHub CLI credential and Vercel CLI session were rejected/expired when checked. The Vercel browser dashboard is signed in, but no code was pushed or deployed during this diagnostic. The supplied GitHub token has been exposed in chat and must be revoked; authenticate through GitHub CLI/browser login rather than pasting a replacement token into chat.
+
+**VM decision:** Moving the current code to an AWS VM would not by itself fix this outage. The immediate failure is that the deployed production branch lacks the API route. A VM can host the same API after its source, database, secrets, TLS domain, private document storage, SMS provider, backups, monitoring, and deployment process are configured; without those, the same sign-in/onboarding gates will remain closed and the VM adds operational work. Fix and validate the production-branch/deployment wiring first, then compare hosting options against actual load and operating cost.
+
+**Safe path to restore service:** restore owner-authorized GitHub and Vercel CLI access locally; push the reviewed feature branch; run a fresh protected preview build and tests; provision separate staging values for SMS, auth secret, storage and scanning; test OTP and document flows with synthetic accounts/files; implement and review staff authentication; then promote a reviewed commit to the configured production branch and verify the production status endpoint and real SMS delivery. Keep driver registration closed until the complete reviewer and document controls pass.
 
 ## P0 — establish the lawful operating model
 
@@ -182,6 +200,8 @@ Official starting points: [NTSA service portal](https://serviceportal.ntsa.go.ke
 5. Finish payments, refunds, payout reconciliation and eTIMS/accounting treatment.
 6. Complete privacy, safety, operations, security, backup/restore and performance evidence.
 7. Produce and test the production AAB, complete Play Console declarations and conduct the controlled launch rehearsal.
+
+Navigation implementation detail and deployment requirements are in [OPEN-SOURCE-NAVIGATION.md](OPEN-SOURCE-NAVIGATION.md).
 
 ## Official reference links
 

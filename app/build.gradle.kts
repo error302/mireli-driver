@@ -9,10 +9,13 @@ android {
         applicationId = "io.github.error302.mireli.driver"
         minSdk = 26
         targetSdk = 36
-        versionCode = 7
-        versionName = "0.4.2"
+        versionCode = 8
+        versionName = "0.5.0"
         buildConfigField("String", "DRIVER_SERVICE_URL", "\"https://mireli-tau.vercel.app\"")
         buildConfigField("boolean", "DRIVER_SERVICE_TEST", "false")
+        val mapStyleUrl = providers.gradleProperty("MIRELI_MAP_STYLE_URL").orElse("https://tiles.openfreemap.org/styles/liberty").get()
+            .replace("\\", "\\\\").replace("\"", "\\\"")
+        buildConfigField("String", "MAP_STYLE_URL", "\"$mapStyleUrl\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     flavorDimensions += "environment"
@@ -67,8 +70,10 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.2")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.2")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    implementation("org.maplibre.gl:android-sdk-opengl:13.6.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")

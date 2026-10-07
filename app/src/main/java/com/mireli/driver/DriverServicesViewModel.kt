@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.mireli.driver.data.*
+import com.mireli.driver.domain.GeoPoint
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -96,6 +97,15 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
         withContext(Dispatchers.IO){sessions.saveAction(id,pending)}
         mutable.value=mutable.value.copy(pendingTripAction=true)
         sendSavedAction(id,pending)
+    }
+    fun navigationRoute(tripId:String,stageId:String,origin:GeoPoint,onComplete:(Result<JSONObject>)->Unit) {
+        val token=session?.token
+        if(token==null){onComplete(Result.failure(IllegalStateException("Sign in again to request directions.")));return}
+        viewModelScope.launch {
+            val result=runCatching {api.request("/navigation/route","POST",token,json=JSONObject()
+                .put("tripId",tripId).put("stageId",stageId).put("origin",JSONObject().put("latitude",origin.latitude).put("longitude",origin.longitude)))}
+            onComplete(result)
+        }
     }
     fun retryTripAction()=work {
         val id=driverId?:throw DriverServiceException(401,"Sign in again.")
