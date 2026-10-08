@@ -33,7 +33,7 @@ class FreshPilotTest {
         rule.onNodeWithTag("theme_light").assertExists()
         rule.onNodeWithText("Mombasa · SGR transfers").assertExists()
         rule.onNodeWithTag("driver_sign_in_title").assertIsDisplayed()
-        rule.onNodeWithTag("driver_phone_field").assertIsDisplayed()
+        rule.onNodeWithTag("driver_email_field").assertIsDisplayed()
         rule.onNodeWithTag("driver_send_code").assertIsDisplayed()
         rule.onAllNodesWithText("Appearance").assertCountEquals(1)
         rule.onAllNodesWithText("PREVIEW",substring=true).assertCountEquals(0)

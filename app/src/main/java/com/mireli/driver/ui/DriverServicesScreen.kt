@@ -43,7 +43,7 @@ private fun JSONArray.objects()=(0 until length()).map {getJSONObject(it)}
 }
 @Composable fun DriverServicesScreen(onClose:(()->Unit)?=null,vm:DriverServicesViewModel=viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
-    var phone by rememberSaveable {mutableStateOf("")};var code by rememberSaveable {mutableStateOf("")}
+    var email by rememberSaveable {mutableStateOf("")};var code by rememberSaveable {mutableStateOf("")}
     var section by rememberSaveable {mutableIntStateOf(4)};var accepted by rememberSaveable {mutableStateOf(false)}
     var supportCategory by rememberSaveable {mutableStateOf("payout")};var supportMessage by rememberSaveable {mutableStateOf("")}
     var payoutName by rememberSaveable {mutableStateOf("")};var payoutAcknowledged by rememberSaveable {mutableStateOf(false)}
@@ -69,7 +69,7 @@ private fun JSONArray.objects()=(0 until length()).map {getJSONObject(it)}
             if(onClose!=null)item {TextButton(onClick=onClose){Text("Back to preview")}}
             if(BuildConfig.DRIVER_SERVICE_TEST)item {Card {Text("STAGING · Test data; no real SMS or payouts.",Modifier.padding(16.dp))}}
             if(state.loading)item {LinearProgressIndicator(Modifier.fillMaxWidth())}
-            state.error?.takeIf{state.signedIn||state.registrationOpen==true}?.let {error->item {Card(colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.errorContainer)){Text(error,Modifier.padding(16.dp),color=MaterialTheme.colorScheme.onErrorContainer)}} }
+            state.error?.takeIf{state.signedIn||state.emailSignInOpen==true}?.let {error->item {Card(colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.errorContainer)){Text(error,Modifier.padding(16.dp),color=MaterialTheme.colorScheme.onErrorContainer)}} }
             if(!state.signedIn) {
                 item {AppearanceToggle(showSettings=false)}
                 item {
@@ -82,40 +82,40 @@ private fun JSONArray.objects()=(0 until length()).map {getJSONObject(it)}
                                 Text("EARN. DRIVE. GROW.",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.primary,fontWeight=FontWeight.SemiBold)
                             }
                             Text("Sign in to drive",Modifier.testTag("driver_sign_in_title"),style=MaterialTheme.typography.headlineMedium)
-                            Text(if(state.phoneSignInOpen==true&&state.registrationOpen!=true)"Use the number linked to your existing driver account. New applications are paused."
-                                else "Use your Kenyan mobile number to sign in or begin your driver application.",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                            OutlinedTextField(phone,{phone=it.take(20)},label={Text("Kenyan mobile number")},placeholder={Text("07XX XXX XXX")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Phone),singleLine=true,enabled=state.challengeId==null,modifier=Modifier.fillMaxWidth().testTag("driver_phone_field"))
+                            Text(if(state.emailSignInOpen==true&&state.registrationOpen!=true)"Use the email linked to your existing driver account. New applications are paused."
+                                else "Use your email address to sign in or begin your driver application.",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                            OutlinedTextField(email,{email=it.take(254)},label={Text("Email address")},placeholder={Text("driver@example.com")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Email),singleLine=true,enabled=state.challengeId==null,modifier=Modifier.fillMaxWidth().testTag("driver_email_field"))
                             if(state.challengeId==null) {
-                                Button(onClick={vm.requestCode(phone)},enabled=!state.loading&&state.phoneSignInOpen==true&&phone.isNotBlank(),modifier=Modifier.fillMaxWidth().heightIn(min=54.dp).testTag("driver_send_code"),shape=RoundedCornerShape(28.dp)) {
-                                    Text(if(state.phoneSignInOpen==true)"Continue with phone" else if(state.loading)"Checking sign-in…" else "Sign-in unavailable")
+                                Button(onClick={vm.requestCode(email)},enabled=!state.loading&&state.emailSignInOpen==true&&email.isNotBlank(),modifier=Modifier.fillMaxWidth().heightIn(min=54.dp).testTag("driver_send_code"),shape=RoundedCornerShape(28.dp)) {
+                                    Text(if(state.emailSignInOpen==true)"Continue with email" else if(state.loading)"Checking sign-in…" else "Sign-in unavailable")
                                 }
-                                Text("We’ll request a one-time SMS code only when phone sign-in is available.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("We will send a one-time verification code to your email.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                             } else {
-                                DriverStepProgress(0,listOf("Verify phone","Documents","Review"))
-                                Text("Check your messages",style=MaterialTheme.typography.titleLarge)
-                                Text("Code requested for ${state.challengePhone}",style=MaterialTheme.typography.bodyMedium)
-                                TextButton(onClick={vm.changePhone();code=""},enabled=!state.loading){Text("Use a different number")}
+                                DriverStepProgress(0,listOf("Verify email","Documents","Review"))
+                                Text("Check your email",style=MaterialTheme.typography.titleLarge)
+                                Text("Code requested for ${state.challengeEmail}",style=MaterialTheme.typography.bodyMedium)
+                                TextButton(onClick={vm.changeEmail();code=""},enabled=!state.loading){Text("Use a different email")}
                                 state.demoCode?.let {sample->Text("Sample verification code: $sample",style=MaterialTheme.typography.bodySmall)}
                                 OutlinedTextField(code,{code=it.filter(Char::isDigit).take(6)},textStyle=MaterialTheme.typography.headlineMedium.copy(letterSpacing=androidx.compose.ui.unit.TextUnit(8f,androidx.compose.ui.unit.TextUnitType.Sp)),label={Text("6-digit verification code")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.NumberPassword),singleLine=true,enabled=!state.loading,modifier=Modifier.fillMaxWidth())
                                 Button(onClick={vm.verifyCode(code)},enabled=!state.loading&&code.length==6,modifier=Modifier.fillMaxWidth().heightIn(min=52.dp),shape=RoundedCornerShape(28.dp)){Text("Verify and continue")}
-                                TextButton(onClick={vm.requestCode(state.challengePhone?:phone)},enabled=!state.loading&&clock>=state.resendAt){Text(if(clock<state.resendAt)"Resend in ${((state.resendAt-clock+999)/1000).coerceAtLeast(0)}s" else "Resend verification code")}
+                                TextButton(onClick={vm.requestCode(state.challengeEmail?:email)},enabled=!state.loading&&clock>=state.resendAt){Text(if(clock<state.resendAt)"Resend in ${((state.resendAt-clock+999)/1000).coerceAtLeast(0)}s" else "Resend verification code")}
                             }
                         }
                     }
                 }
-                if(state.phoneSignInOpen!=true||state.registrationOpen!=true)item {
+                if(state.emailSignInOpen!=true||state.registrationOpen!=true)item {
                     Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(20.dp),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceVariant)) {
                         Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                             Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                                 Icon(MireliIcons.Info,null,tint=MaterialTheme.colorScheme.primary,modifier=Modifier.size(20.dp))
-                                Text(when {state.error!=null->"Driver service unavailable";state.phoneSignInOpen==true->"New driver applications are paused";state.loading->"Connecting to driver sign-in";else->"Driver sign-in is not connected"},style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.SemiBold)
+                                Text(when {state.error!=null->"Driver service unavailable";state.emailSignInOpen==true->"New driver applications are paused";state.loading->"Connecting to driver sign-in";else->"Driver sign-in is not connected"},style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.SemiBold)
                             }
                             Text(state.error?:when {
-                                state.phoneSignInOpen==true&&state.registrationOpen!=true->"Existing drivers can sign in, but Mireli is not accepting new driver applications right now."
+                                state.emailSignInOpen==true&&state.registrationOpen!=true->"Existing drivers can sign in, but Mireli is not accepting new driver applications right now."
                                 state.loading->"Checking whether the live driver service can accept a sign-in request."
-                                else->state.serviceMessage?:"We can’t confirm phone sign-in at this server address yet."
+                                else->state.serviceMessage?:"We can’t confirm email sign-in at this server address yet."
                             },style=MaterialTheme.typography.bodyMedium)
-                            Text("No SMS code has been sent. Checking service status does not send a code or determine driver eligibility.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Checking the connection does not send an email code. Tap Continue with email to request one.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                             OutlinedButton(onClick=vm::refreshServiceStatus,enabled=!state.loading,shape=RoundedCornerShape(14.dp)){Text("Retry connection")}
                         }
                     }
@@ -130,7 +130,7 @@ private fun JSONArray.objects()=(0 until length()).map {getJSONObject(it)}
                             Text("Make the SGR journey easier.",style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.SemiBold)
                             Text("Join local drivers helping travellers connect with Mombasa’s SGR terminus.",style=MaterialTheme.typography.bodyLarge,color=MaterialTheme.colorScheme.onSurfaceVariant)
                             HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant)
-                            OnboardingStep("1","Verify your phone")
+                            OnboardingStep("1","Verify your email")
                             OnboardingStep("2","Share driver and vehicle documents")
                             OnboardingStep("3","Wait for compliance review")
                             Text("Assignments become available only after your account and vehicle are approved.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
@@ -164,7 +164,7 @@ private fun JSONArray.objects()=(0 until length()).map {getJSONObject(it)}
                     }
                 }else if(section==0&&onboarding!=null&&app!=null) {
                     item {DriverHeading("Driver account","Manage your profile, vehicle and documents.");AppearanceToggle(showSettings=false)}
-                    item {DriverStepProgress(if(app.getString("status")=="approved")2 else 1,listOf("Phone verified","Documents","Review"))}
+                    item {DriverStepProgress(if(app.getString("status")=="approved")2 else 1,listOf("Email verified","Documents","Review"))}
                     item {Card {Column(Modifier.padding(16.dp)) {
                         Text("Application: ${app.getString("status").replace('_',' ')}",style=MaterialTheme.typography.titleMedium)
                         Text(if(state.eligibility?.optBoolean("eligible")==true)"Eligible for new assignments" else "Approval required before new assignments")
@@ -198,11 +198,11 @@ private fun JSONArray.objects()=(0 until length()).map {getJSONObject(it)}
                         val destination=statement.getJSONObject("destination")
                         item {Card{Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
                             Text("Beneficiary: ${destination.getString("status").replace('_',' ')}",style=MaterialTheme.typography.titleMedium)
-                            Text("Payout setup uses your verified account phone. Finance checks your account name and identity evidence before approval. Use Support if you need a different phone.")
+                            Text("Payout setup uses the phone recorded in your driver profile. Email verification does not verify an M-Pesa account. Finance checks your account name and identity evidence before approval. Use Support if you need a different phone.")
                             destination.optString("reviewNote").takeIf{it.isNotBlank()&&it!="null"}?.let{Text(it)}
                             if(destination.getString("status") in listOf("not_configured","rejected")) {
                                 OutlinedTextField(payoutName,{payoutName=it.take(100)},label={Text("Name on your M-Pesa account")},enabled=!state.loading,modifier=Modifier.fillMaxWidth())
-                                Row(Modifier.fillMaxWidth().toggleable(payoutAcknowledged,enabled=!state.loading,role=Role.Checkbox,onValueChange={payoutAcknowledged=it})){Checkbox(payoutAcknowledged,null);Text("This verified phone is my M-Pesa account.")}
+                                Row(Modifier.fillMaxWidth().toggleable(payoutAcknowledged,enabled=!state.loading,role=Role.Checkbox,onValueChange={payoutAcknowledged=it})){Checkbox(payoutAcknowledged,null);Text("This profile phone is my M-Pesa account.")}
                                 Button(onClick={vm.payoutDestination(payoutName)},enabled=!state.loading&&payoutAcknowledged&&payoutName.trim().length>=3){Text("Request beneficiary review")}
                             }
                         }}}
@@ -245,21 +245,23 @@ private fun JSONArray.objects()=(0 until length()).map {getJSONObject(it)}
         }
     }
 }
-@Composable private fun ServerProfile(data:JSONObject,busy:Boolean,save:(String,String,String,String,String,Boolean)->Unit) {
+@Composable private fun ServerProfile(data:JSONObject,busy:Boolean,save:(String,String,String,String,String,Boolean,String)->Unit) {
     val profile=data.getJSONObject("profile");val app=data.getJSONObject("application");val version=app.getInt("version")
     var name by rememberSaveable(version){mutableStateOf(profile.getString("fullName").takeIf{it!="New applicant"}?:"")}
+    var contactPhone by rememberSaveable(version){mutableStateOf(profile.optString("phone").takeIf { it != "null" } ?: "")}
     var plate by rememberSaveable(version){mutableStateOf(profile.getString("plate"))};var capacity by rememberSaveable(version){mutableStateOf(profile.getInt("capacity").toString())}
     var licence by rememberSaveable(version){mutableStateOf(app.getString("licenceClass"))};var cab by rememberSaveable(version){mutableStateOf(profile.getString("cabType"))}
     var owner by rememberSaveable(version){mutableStateOf(app.getBoolean("ownsVehicle"))}
     val editable=!busy&&app.getString("status") in listOf("draft","changes_requested","approved")
     Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
-        Text("Driver & vehicle",style=MaterialTheme.typography.titleLarge);Text("Verified phone: ${profile.getString("phone")}")
+        Text("Driver & vehicle",style=MaterialTheme.typography.titleLarge);Text("Contact phone: ${profile.optString("phone").takeIf { it != "null" && it.isNotBlank() } ?: "Not provided"}")
+        OutlinedTextField(contactPhone,{contactPhone=it.take(20)},label={Text("Kenyan contact phone")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Phone),singleLine=true,enabled=editable,modifier=Modifier.fillMaxWidth())
         OutlinedTextField(name,{name=it.take(100)},label={Text("Driver full name")},singleLine=true,enabled=editable,modifier=Modifier.fillMaxWidth())
         OutlinedTextField(plate,{plate=it.take(15).uppercase()},label={Text("Registration plate")},singleLine=true,enabled=editable,modifier=Modifier.fillMaxWidth())
         OutlinedTextField(capacity,{capacity=it.filter(Char::isDigit).take(2)},label={Text("Passenger seats")},singleLine=true,enabled=editable,modifier=Modifier.fillMaxWidth())
         OutlinedTextField(licence,{licence=it.take(20)},label={Text("Licence class")},singleLine=true,enabled=editable,modifier=Modifier.fillMaxWidth())
         OutlinedTextField(cab,{cab=it.take(80)},label={Text("Vehicle type")},singleLine=true,enabled=editable,modifier=Modifier.fillMaxWidth())
         Row(Modifier.fillMaxWidth().toggleable(owner,enabled=editable,role=Role.Checkbox,onValueChange={owner=it})){Checkbox(owner,null);Text("I own this vehicle")}
-        Button(onClick={save(name,plate,capacity,licence,cab,owner)},enabled=editable,modifier=Modifier.fillMaxWidth()){Text("Save profile to Mireli")}
+        Button(onClick={save(name,plate,capacity,licence,cab,owner,contactPhone)},enabled=editable,modifier=Modifier.fillMaxWidth()){Text("Save profile to Mireli")}
     }
 }

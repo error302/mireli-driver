@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONObject
 
 data class DriverServiceState(val loading:Boolean=true,val signedIn:Boolean=false,val challengeId:String?=null,
-    val demoCode:String?=null,val challengePhone:String?=null,val onboarding:JSONObject?=null,val earnings:JSONObject?=null,val support:JSONObject?=null,val supportSent:Int=0,val eligibility:JSONObject?=null,val trips:JSONObject?=null,val pendingTripAction:Boolean=false,val phoneSignInOpen:Boolean?=null,val registrationOpen:Boolean?=null,val serviceMessage:String?=null,val resendAt:Long=0,val error:String?=null)
+    val demoCode:String?=null,val challengeEmail:String?=null,val onboarding:JSONObject?=null,val earnings:JSONObject?=null,val support:JSONObject?=null,val supportSent:Int=0,val eligibility:JSONObject?=null,val trips:JSONObject?=null,val pendingTripAction:Boolean=false,val emailSignInOpen:Boolean?=null,val registrationOpen:Boolean?=null,val serviceMessage:String?=null,val resendAt:Long=0,val error:String?=null)
 class DriverServicesViewModel(application:Application):AndroidViewModel(application) {
     private val api=DriverApi()
     private val sessions=DriverSessionStore(application)
@@ -43,17 +43,17 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
         if(status.optString("apiVersion")!="v1" || !status.has("simulation") || status.getBoolean("simulation")!=BuildConfig.DRIVER_SERVICE_TEST)throw DriverServiceException(503,"This build cannot connect to that service environment.")
         val available=status.optBoolean("registrationOpen",false)
         // Existing drivers must retain sign-in even when new applications are paused.
-        // Older services may omit phoneSignInOpen; preserve their original behavior until migrated.
-        val signInOpen=status.optBoolean("phoneSignInOpen",available)
-        mutable.value=mutable.value.copy(phoneSignInOpen=signInOpen,registrationOpen=available,serviceMessage=status.optString("message").takeIf {it.isNotBlank()&&it!="null"})
+        // Email sign-in requires explicit support; never send an email to the SMS endpoint.
+        val signInOpen=status.optBoolean("emailSignInOpen",false)
+        mutable.value=mutable.value.copy(emailSignInOpen=signInOpen,registrationOpen=available,serviceMessage=status.optString("message").takeIf {it.isNotBlank()&&it!="null"})
     }
     fun refreshServiceStatus()=work {serviceStatus()}
-    fun requestCode(phone:String)=work {
+    fun requestCode(email:String)=work {
         if(mutable.value.resendAt>System.currentTimeMillis())throw DriverServiceException(429,"Please wait before requesting another code.")
         serviceStatus()
-        if(mutable.value.phoneSignInOpen!=true)throw DriverServiceException(503,"Driver phone sign-in is not available yet. Please check again later.")
-        val result=api.request("/auth/challenges","POST",json=JSONObject().put("phone",phone))
-        mutable.value=mutable.value.copy(challengeId=result.getString("challengeId"),challengePhone=phone,resendAt=System.currentTimeMillis()+result.optInt("cooldownSeconds",60).coerceIn(30,300)*1000L,demoCode=if(BuildConfig.DRIVER_SERVICE_TEST)result.optString("demoCode").takeIf {it.isNotBlank()} else null)
+        if(mutable.value.emailSignInOpen!=true)throw DriverServiceException(503,"Driver email sign-in is not available yet. Please check again later.")
+        val result=api.request("/auth/email-challenges","POST",json=JSONObject().put("email",email.trim()))
+        mutable.value=mutable.value.copy(challengeId=result.getString("challengeId"),challengeEmail=email.trim(),resendAt=System.currentTimeMillis()+result.optInt("cooldownSeconds",60).coerceIn(30,300)*1000L,demoCode=if(BuildConfig.DRIVER_SERVICE_TEST)result.optString("demoCode").takeIf {it.isNotBlank()} else null)
     }
     fun verifyCode(code:String)=work {
         val challenge=mutable.value.challengeId?:return@work
@@ -76,7 +76,7 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
         val pending=withContext(Dispatchers.IO){sessions.savedAction(driverId!!)!=null}
         mutable.value=mutable.value.copy(onboarding=onboarding.await(),earnings=statement,support=support.await(),eligibility=account.getJSONObject("eligibility"),trips=trips.await(),pendingTripAction=pending)
     }
-    fun changePhone(){if(!mutable.value.loading)mutable.value=mutable.value.copy(challengeId=null,challengePhone=null,demoCode=null,error=null,resendAt=0)}
+    fun changeEmail(){if(!mutable.value.loading)mutable.value=mutable.value.copy(challengeId=null,challengeEmail=null,demoCode=null,error=null,resendAt=0)}
     fun support(category:String,message:String)=work {
         val fingerprint="$category|${message.trim()}"
         val id=supportRequest?.takeIf{it.first==fingerprint}?.second?:java.util.UUID.randomUUID().toString().also{supportRequest=fingerprint to it}
@@ -122,10 +122,10 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
         withContext(Dispatchers.IO){sessions.clearAction(id)};mutable.value=mutable.value.copy(pendingTripAction=false)
         loadAccount()
     }
-    fun profile(name:String,plate:String,capacity:String,licence:String,cabType:String,owner:Boolean)=work {
+    fun profile(name:String,plate:String,capacity:String,licence:String,cabType:String,owner:Boolean,phone:String)=work {
         val current=mutable.value.onboarding?:return@work
         val updated=api.request("/onboarding","PUT",session?.token,json=JSONObject().put("expectedVersion",current.getJSONObject("application").getInt("version"))
-            .put("fullName",name).put("plate",plate).put("capacity",capacity.toIntOrNull()?:0).put("licenceClass",licence).put("cabType",cabType).put("ownsVehicle",owner))
+            .put("fullName",name).put("plate",plate).put("capacity",capacity.toIntOrNull()?:0).put("licenceClass",licence).put("cabType",cabType).put("ownsVehicle",owner).put("phone",phone.trim()))
         mutable.value=mutable.value.copy(onboarding=updated);loadAccount()
     }
     fun upload(type:String,expiry:String,uri:Uri)=work {

@@ -25,11 +25,11 @@ class StagingServicesTest {
     private fun screenshot(name:String){rule.waitForIdle();val dir=File(rule.activity.getExternalFilesDir(null),"screenshots").apply{mkdirs()};val bitmap=InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot();File(dir,"$name.png").outputStream().use{bitmap.compress(Bitmap.CompressFormat.PNG,100,it)};bitmap.recycle()}
     @Test fun approvedDriverCanDeliverACharterAndReadQueuedEarnings() {
         val arguments=InstrumentationRegistry.getArguments()
-        val phone=arguments.getString("fixturePhone")
-        org.junit.Assume.assumeTrue("Requires the guarded local synthetic fixture",phone!=null)
+        val email=arguments.getString("fixtureEmail")
+        org.junit.Assume.assumeTrue("Requires the guarded local synthetic fixture",email!=null)
         val tripId=arguments.getString("fixtureTripId")!!;val bookingCode=arguments.getString("fixtureCode")!!
-        rule.waitUntil(20000){rule.onAllNodes(hasText("Kenyan mobile number") and isEnabled()).fetchSemanticsNodes().isNotEmpty()}
-        rule.onNodeWithText("Kenyan mobile number").performTextInput(phone!!)
+        rule.waitUntil(20000){rule.onAllNodes(hasText("Email address") and isEnabled()).fetchSemanticsNodes().isNotEmpty()}
+        rule.onNodeWithText("Email address").performTextInput(email!!)
         rule.onNodeWithTag("driver_send_code").performScrollTo().assertIsEnabled().performClick()
         rule.waitUntil(30000){rule.onAllNodesWithText("Sample verification code:",substring=true).fetchSemanticsNodes().isNotEmpty()}
         val sample=rule.onNodeWithText("Sample verification code:",substring=true).fetchSemanticsNode().config[SemanticsProperties.Text].joinToString(" ")
@@ -66,8 +66,8 @@ class StagingServicesTest {
         val api=DriverApi();assertTrue(runBlocking {api.request("/status")}.getBoolean("simulation"))
         DriverSessionStore(rule.activity).clear()
         val phone="+254700"+System.currentTimeMillis().toString().takeLast(6)
-        rule.waitUntil(20000){rule.onAllNodes(hasText("Kenyan mobile number") and isEnabled()).fetchSemanticsNodes().isNotEmpty()}
-        rule.onNodeWithText("Kenyan mobile number").performTextInput(phone)
+        rule.waitUntil(20000){rule.onAllNodes(hasText("Email address") and isEnabled()).fetchSemanticsNodes().isNotEmpty()}
+        rule.onNodeWithText("Email address").performTextInput("driver-${System.currentTimeMillis()}@example.com")
         rule.onNodeWithTag("driver_send_code").performScrollTo().assertIsEnabled().performClick()
         rule.waitUntil(30000){rule.onAllNodesWithText("Sample verification code:",substring=true).fetchSemanticsNodes().isNotEmpty()}
         val sampleText=rule.onNodeWithText("Sample verification code:",substring=true).fetchSemanticsNode().config[SemanticsProperties.Text].joinToString(" ")
@@ -77,7 +77,7 @@ class StagingServicesTest {
         rule.onNodeWithText("Verify and continue").performScrollTo().assertIsEnabled().performClick()
         rule.waitUntil(30000){rule.onAllNodes(hasText("Sign out") and isEnabled()).fetchSemanticsNodes().isNotEmpty()}
         rule.onNodeWithText("Account",useUnmergedTree=true).performClick()
-        listOf("Driver full name" to "Sample Native Driver","Registration plate" to "DEMO 030","Passenger seats" to "10","Licence class" to "D1","Vehicle type" to "Sample shuttle").forEach{(label,value)->
+        listOf("Kenyan contact phone" to phone,"Driver full name" to "Sample Native Driver","Registration plate" to "DEMO 030","Passenger seats" to "10","Licence class" to "D1","Vehicle type" to "Sample shuttle").forEach{(label,value)->
             reveal(label);rule.onNodeWithText(label).performScrollTo().assertIsEnabled().performTextReplacement(value)
         }
         closeSoftKeyboard();reveal("Save profile to Mireli");rule.onNodeWithText("Save profile to Mireli").performScrollTo().assertIsEnabled().performClick()
@@ -99,7 +99,7 @@ class StagingServicesTest {
         reveal("Reference:");rule.onNodeWithText("Reference:",substring=true).assertExists()
         assertEquals("Synthetic native support request for testing only.",runBlocking{api.request("/support",token=session!!.token)}.getJSONArray("cases").getJSONObject(0).getString("message"))
         reveal("Sign out");rule.onNodeWithText("Sign out").performClick()
-        rule.waitUntil(30000){rule.onAllNodesWithText("Kenyan mobile number").fetchSemanticsNodes().isNotEmpty()}
+        rule.waitUntil(30000){rule.onAllNodesWithText("Email address").fetchSemanticsNodes().isNotEmpty()}
         assertNull(DriverSessionStore(rule.activity).load())
         val exception=runCatching{runBlocking {api.request("/me",token=session!!.token)}}.exceptionOrNull()
         assertTrue(exception is DriverServiceException && exception.status==401)
