@@ -2,6 +2,14 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+
+val uploadSigning = listOf("MIRELI_UPLOAD_KEYSTORE", "MIRELI_UPLOAD_STORE_PASSWORD",
+    "MIRELI_UPLOAD_KEY_ALIAS", "MIRELI_UPLOAD_KEY_PASSWORD").map { providers.environmentVariable(it).orNull }
+require(uploadSigning.all { it.isNullOrBlank() } || uploadSigning.none { it.isNullOrBlank() }) {
+    "Set all four Mireli upload-signing variables together."
+}
+val (uploadKeystore, uploadStorePassword, uploadKeyAlias, uploadKeyPassword) = uploadSigning
+
 android {
     namespace = "com.mireli.driver"
     compileSdk = 36
@@ -9,14 +17,25 @@ android {
         applicationId = "io.github.error302.mireli.driver"
         minSdk = 26
         targetSdk = 36
-        versionCode = 10
-        versionName = "0.7.0"
-        buildConfigField("String", "DRIVER_SERVICE_URL", "\"https://mireli-tau.vercel.app\"")
+        versionCode = 12
+        versionName = "0.9.0"
+        buildConfigField("String", "DRIVER_SERVICE_URL", "\"https://mireli.online\"")
         buildConfigField("boolean", "DRIVER_SERVICE_TEST", "false")
         val mapStyleUrl = providers.gradleProperty("MIRELI_MAP_STYLE_URL").orElse("https://tiles.openfreemap.org/styles/liberty").get()
             .replace("\\", "\\\\").replace("\"", "\\\"")
         buildConfigField("String", "MAP_STYLE_URL", "\"$mapStyleUrl\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+    signingConfigs {
+        if (!uploadKeystore.isNullOrBlank()) {
+            create("mireliUpload") {
+                storeFile = file(uploadKeystore)
+                require(storeFile?.isFile == true) { "The Mireli upload keystore could not be found." }
+                storePassword = uploadStorePassword
+                keyAlias = uploadKeyAlias
+                keyPassword = uploadKeyPassword
+            }
+        }
     }
     flavorDimensions += "environment"
     productFlavors {
@@ -29,6 +48,7 @@ android {
         create("production") {
             dimension = "environment"
             resValue("string", "app_name", "Mireli Driver")
+            signingConfig = signingConfigs.findByName("mireliUpload")
         }
         create("pilot") {
             dimension = "environment"
@@ -41,7 +61,9 @@ android {
             applicationIdSuffix = ".staging"
             versionNameSuffix = "-staging"
             resValue("string", "app_name", "Mireli Staging")
-            buildConfigField("String", "DRIVER_SERVICE_URL", "\"http://10.0.2.2:3100\"")
+            val port = providers.gradleProperty("MIRELI_STAGING_PORT").orElse("3000").get().toInt()
+            require(port in 1..65535) { "MIRELI_STAGING_PORT must be a valid TCP port" }
+            buildConfigField("String", "DRIVER_SERVICE_URL", "\"http://10.0.2.2:$port\"")
             buildConfigField("boolean", "DRIVER_SERVICE_TEST", "true")
         }
     }

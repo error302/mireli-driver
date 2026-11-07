@@ -1,7 +1,6 @@
 package com.mireli.driver.ui
 
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -11,7 +10,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
@@ -21,16 +19,15 @@ import androidx.compose.ui.unit.sp
 import com.mireli.driver.R
 import org.json.JSONObject
 
-/** Reference-inspired surfaces retain Mireli's original blue/teal identity. */
 @Composable fun DriverBrandHeader(subtitle: String) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         // The original logo has a white canvas. Keep that canvas in both themes.
-        Surface(shape = RoundedCornerShape(16.dp), color = Color.White) {
-            Image(painterResource(R.drawable.mireli_driver_logo), "Mireli original logo", Modifier.size(56.dp))
+        Surface(shape = RoundedCornerShape(12.dp), color = Color.White) {
+            Image(painterResource(R.drawable.mireli_driver_logo), "Mireli original logo", Modifier.size(48.dp))
         }
         Column(Modifier.weight(1f)) {
-            Text("Mireli", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text("Mireli Driver", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         AppearanceButton()
@@ -45,22 +42,21 @@ import org.json.JSONObject
 }
 
 @Composable fun DriverMetric(label: String, value: String, icon: ImageVector, modifier: Modifier = Modifier) {
-    OutlinedCard(modifier, colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
-            Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Column(modifier.padding(vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+            Text(value, style = MaterialTheme.typography.titleLarge)
         }
+        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
 @Composable fun DriverEarningsHero(label: String, amount: Long, detail: String) {
-    Box(Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(Color(0xFF063555), Color(0xFF007F79))),
-        RoundedCornerShape(24.dp)).padding(24.dp)) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), color = StationNavy) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Icon(MireliIcons.AccountBalanceWallet, null, tint = Color.White)
-                Text(label, color = Color.White, style = MaterialTheme.typography.labelLarge)
+                Icon(MireliIcons.AccountBalanceWallet, null, tint = StationMint)
+                Text(label, color = StationMint, style = MaterialTheme.typography.labelLarge)
             }
             Text(money(amount), color = Color.White, fontSize = 34.sp, lineHeight = 40.sp,
                 fontWeight = FontWeight.Bold, letterSpacing = (-1).sp)
@@ -70,13 +66,10 @@ import org.json.JSONObject
 }
 
 @Composable fun DriverActionTile(title: String, detail: String, icon: ImageVector, action: () -> Unit) {
-    OutlinedCard(onClick = action, modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.primaryContainer) {
-                Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(10.dp).size(24.dp))
-            }
+    Surface(onClick = action, modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface) {
+        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(title, style = MaterialTheme.typography.titleMedium)
                 Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -104,34 +97,70 @@ import org.json.JSONObject
 }
 
 @Composable fun DriverHomeOverview(profile: JSONObject?, application: JSONObject?, eligible: Boolean,
-    trips: List<JSONObject>?, busy: Boolean, open: (Int) -> Unit) {
+    trips: List<JSONObject>?, busy: Boolean, activeNavigation: (@Composable () -> Unit)? = null, open: (Int) -> Unit) {
     val name = profile?.optString("fullName")?.takeIf { it.isNotBlank() && it != "New applicant" }
-    DriverHeading(name?.let { "Welcome, ${it.substringBefore(' ')}" } ?: "Your day with Mireli",
-        "SGR transfers to and from Mombasa.")
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
-        Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Icon(if(eligible) MireliIcons.Train else MireliIcons.VerifiedUser, null,
-                tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(36.dp))
-            Text(if(eligible) "Ready for your next journey" else "Let's get you ready to drive",
-                style = MaterialTheme.typography.titleLarge)
-            Text(if(eligible) "Your account is approved for assignments. Open Trips to view your assigned route and passenger details."
-                else "Complete your driver profile and upload your documents. Mireli reviews your account before you can accept journeys.",
-                color = MaterialTheme.colorScheme.onPrimaryContainer)
-            Button(onClick = { open(if(eligible) 3 else 0) }, enabled = !busy,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp)) {
-                Text(if(eligible) "View assignments" else "Continue onboarding")
-                Spacer(Modifier.width(10.dp)); Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null)
+    val active = trips?.filter { it.isActiveTransfer() }
+    val next = active?.minWithOrNull(transferOrder())
+    val nextName = next?.optString("routeName")?.takeIf { it.isNotBlank() }
+    val phase = next?.optString("phase")
+    val hasJourney = phase in listOf("accepted", "at_pickup", "in_progress") || eligible && next != null
+    val title = when {
+        phase == "in_progress" -> "Current journey"
+        hasJourney -> "Next transfer"
+        eligible -> "Scheduled transfers"
+        else -> "Driver approval needed"
+    }
+    DriverHeading(name?.let { "Welcome, ${it.substringBefore(' ')}" } ?: "Your schedule", "Mombasa SGR transfers")
+    OutlinedCard(colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(16.dp)) {
+        Surface(color = StationNavy) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(if (eligible || hasJourney) MireliIcons.Train else MireliIcons.VerifiedUser, null,
+                    tint = StationMint, modifier = Modifier.size(22.dp))
+                Text(title, style = MaterialTheme.typography.titleLarge, color = Color.White)
+            }
+        }
+        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (hasJourney && next != null && nextName != null) {
+                TransferStatus(next.optString("phase"))
+                Text(nextName, style = MaterialTheme.typography.titleMedium)
+                TransferSchedule(next)
+                TransferEndpoints(next)
+            } else {
+                val detail = when {
+                    !eligible -> "Complete your profile and upload your driver and vehicle documents for review."
+                    active == null -> "Refresh your account to check your assignments."
+                    active.isEmpty() -> "No transfers are assigned. Dispatch will send your next scheduled trip here."
+                    else -> "Open Trips to see the pickup, drop-off and departure for your assignment."
+                }
+                Text(detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Button(onClick = { open(if (eligible || hasJourney) 3 else 0) }, enabled = !busy,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)) {
+                Icon(if (eligible || hasJourney) MireliIcons.Calendar else MireliIcons.Badge, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(if (eligible || hasJourney) "View assignments" else "Continue onboarding")
             }
         }
     }
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        DriverMetric("Active assignments", trips?.count { it.optString("phase") !in listOf("completed", "cancelled", "declined") }?.toString() ?: "—",
-            MireliIcons.Route, Modifier.weight(1f))
-        DriverMetric("Recent completed", trips?.count { it.optString("phase") == "completed" }?.toString() ?: "—",
-            MireliIcons.CheckCircleOutline, Modifier.weight(1f))
+    activeNavigation?.invoke()
+    if (trips != null) {
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            DriverMetric("Active assignments", active.orEmpty().size.toString(), MireliIcons.Calendar, Modifier.weight(1f))
+            DriverMetric("Recently completed", trips.count { it.optString("phase") == "completed" }.toString(),
+                MireliIcons.CheckCircleOutline, Modifier.weight(1f))
+        }
     }
-    DriverActionTile("Driver account", application?.optString("status")?.replace('_', ' ')?.let { "Application: $it · profile & documents" }
-        ?: "Profile, vehicle and required documents", MireliIcons.PersonOutline) { open(0) }
-    DriverActionTile("Earnings & payouts", "Confirmed settlements and your M-Pesa beneficiary", MireliIcons.AccountBalanceWallet) { open(1) }
-    DriverActionTile("Help & support", "Track account, document and payout cases", MireliIcons.HeadsetMic) { open(2) }
+    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface) {
+        Column {
+            DriverActionTile("Driver account", application?.optString("status")?.takeIf { it.isNotBlank() }
+                ?.replace('_', ' ')?.let { "Application status: $it" }
+                ?: "Profile, vehicle and documents", MireliIcons.PersonOutline) { open(0) }
+            HorizontalDivider()
+            DriverActionTile("Earnings & payouts", "Settlements and M-Pesa beneficiary", MireliIcons.AccountBalanceWallet) { open(1) }
+            HorizontalDivider()
+            DriverActionTile("Help & support", "Account, document and payout cases", MireliIcons.HeadsetMic) { open(2) }
+        }
+    }
 }

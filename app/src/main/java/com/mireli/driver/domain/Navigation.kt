@@ -14,11 +14,31 @@ object DriverNavigation {
         "TO_TERMINUS"->stages.reversed()
         else->emptyList()
     }
-    fun primaryStop(stages:List<NavigationStop>,direction:String,phase:String):NavigationStop? {
-        val ordered=orderedStops(stages,direction)
-        val target=when(phase){"accepted","at_pickup"->ordered.firstOrNull();"in_progress"->ordered.lastOrNull();else->null}
-        // Never silently substitute a different stop if the intended point is invalid.
-        return target?.takeIf{it.valid}
+    fun primaryStop(
+        stages: List<NavigationStop>,
+        direction: String,
+        phase: String,
+        bookedStageIds: Set<String> = emptySet(),
+        hasDoorAddress: Boolean = false
+    ): NavigationStop? {
+        val pickingUp = when (phase) {
+            "accepted", "at_pickup" -> true
+            "in_progress" -> false
+            else -> return null
+        }
+        val route = orderedStops(stages, direction)
+        val fromTerminus = direction == "FROM_TERMINUS"
+        if (pickingUp == fromTerminus) {
+            return (if (fromTerminus) route.firstOrNull() else route.lastOrNull())?.takeIf { it.valid }
+        }
+        if (hasDoorAddress) return null
+        val passengerStops = if (fromTerminus) route.drop(1) else route.dropLast(1)
+        val target = if (bookedStageIds.isNotEmpty()) {
+            passengerStops.firstOrNull { it.id in bookedStageIds }
+        } else {
+            passengerStops.singleOrNull()
+        }
+        return target?.takeIf { it.valid }
     }
     fun directions(stop:NavigationStop):String?=stop.takeIf{it.valid}?.let{
         "https://www.google.com/maps/dir/?api=1&destination=${encode("${it.latitude},${it.longitude}")}&travelmode=driving&dir_action=navigate"

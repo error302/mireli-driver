@@ -28,7 +28,7 @@ class DriverDesignTest {
             }
         } } }
         rule.onNodeWithContentDescription("Mireli original logo").assertExists()
-        rule.onNodeWithText("Let's get you ready to drive").assertExists()
+        rule.onNodeWithText("Driver approval needed").assertExists()
         rule.onNodeWithText("Continue onboarding").performScrollTo().performClick()
         assertEquals(0, opened)
         rule.onNodeWithText("Earnings & payouts").performScrollTo().performClick()
@@ -45,11 +45,24 @@ class DriverDesignTest {
         rule.setContent { MireliTheme { Surface {
             Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp)) {
                 DriverHomeOverview(JSONObject().put("fullName", "Test Driver"), JSONObject().put("status", "approved"), true,
-                    listOf(JSONObject().put("phase", "accepted"), JSONObject().put("phase", "completed")), false) { opened = it }
+                    listOf(JSONObject("""{
+                        "id":"synthetic-assignment",
+                        "phase":"accepted",
+                        "routeName":"South Coast transfer",
+                        "serviceType":"shared",
+                        "direction":"TO_TERMINUS",
+                        "departureAt":"2026-11-07T05:15:00Z",
+                        "stages":[{"name":"Mombasa SGR Terminus"},{"name":"Ferry"},{"name":"Fayaz"},{"name":"Shika Adabu"}]
+                    }"""), JSONObject().put("phase", "completed")), false) { opened = it }
             }
         } } }
         rule.onNodeWithTag("theme_dark").assertExists()
         rule.onNodeWithText("Welcome, Test").assertExists()
+        rule.onNodeWithText("Pickup").assertExists()
+        rule.onNodeWithText("Shika Adabu").assertExists()
+        rule.onNodeWithText("Drop-off").assertExists()
+        rule.onNodeWithText("Mombasa SGR Terminus").assertExists()
+        rule.onNodeWithText("08:15 EAT").assertExists()
         rule.onNodeWithText("View assignments").performScrollTo().performClick()
         assertEquals(3, opened)
         rule.onAllNodesWithText("1").assertCountEquals(2)

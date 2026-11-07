@@ -18,6 +18,8 @@ class NavigationUiTest {
     @Test fun destinationAndStopSelectionSendOnlyTheExpectedMapsUrl(){
         var opened:String?=null
         rule.setContent{MireliTheme{Surface{Column{TripNavigation(trip(),onNavigate={opened=it;true})}}}}
+        rule.onNodeWithText("Start in-app navigation").assertDoesNotExist()
+        rule.onNodeWithText("In-app directions are unavailable.",substring=true).assertExists()
         rule.onNodeWithText("Open destination in Google Maps").performClick()
         assertTrue(opened!!.contains("destination=-4.01%2C39.6"))
         rule.onNodeWithText("Coast stop").performClick()

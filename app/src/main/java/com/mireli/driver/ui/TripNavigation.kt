@@ -11,6 +11,7 @@ import android.location.LocationManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.Looper
+import android.os.SystemClock
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -37,6 +38,7 @@ import com.mireli.driver.domain.distanceMeters
 import com.mireli.driver.domain.nearestRoutePointIndex
 import com.mireli.driver.domain.remainingDistanceMeters
 import com.mireli.driver.domain.remainingDurationSeconds
+import kotlinx.coroutines.delay
 import org.json.JSONObject
 import org.maplibre.android.MapLibre
 import org.maplibre.android.annotations.Marker
@@ -54,6 +56,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 typealias RouteRequest=(tripId:String,stageId:String,origin:GeoPoint,onComplete:(Result<JSONObject>)->Unit)->Unit
+private const val LOCATION_MAX_AGE_MS = 45_000L
 
 /** Opens only our constructed HTTPS Maps URLs as an explicit navigation fallback. */
 internal fun openMaps(context:Context,url:String):Boolean {
@@ -75,39 +78,66 @@ internal fun openMaps(context:Context,url:String):Boolean {
     var routeError by remember(tripId){mutableStateOf<String?>(null)}
     var route by remember(tripId){mutableStateOf<DriverRoute?>(null)}
     var routeLoading by remember(tripId){mutableStateOf(false)}
-    var lastRouteRequest by rememberSaveable(tripId){mutableLongStateOf(0L)}
+    var lastRouteRequest by remember(tripId){mutableLongStateOf(0L)}
     var routeRequestRevision by remember(tripId){mutableIntStateOf(0)}
     var offRouteSamples by remember(tripId){mutableIntStateOf(0)}
-    var currentLocation by remember(tripId){mutableStateOf<GeoPoint?>(null)}
+    var locationFix by remember(tripId){mutableStateOf<Location?>(null)}
+    val currentLocation = locationFix?.let { GeoPoint(it.latitude, it.longitude) }
+    LaunchedEffect(locationFix) {
+        val fix = locationFix ?: return@LaunchedEffect
+        val ageMs = (SystemClock.elapsedRealtimeNanos() - fix.elapsedRealtimeNanos) / 1_000_000
+        delay((LOCATION_MAX_AGE_MS - ageMs).coerceAtLeast(0L))
+        locationFix = null
+        locationError = "Waiting for a fresh location fix…"
+    }
+    val routingAvailable by rememberUpdatedState(onRequestRoute != null)
+    LaunchedEffect(routingAvailable) {
+        if (!routingAvailable) {
+            disclosure = false
+            navigating = false
+            route = null
+            routeLoading = false
+            lastRouteRequest = 0L
+            routeRequestRevision++
+        }
+    }
     val navigate=onNavigate?:{url:String->openMaps(context,url)}
-    val stages=trip.optJSONArray("stages")
-    val stops=(0 until (stages?.length()?:0)).map{index->val s=stages!!.getJSONObject(index)
-        NavigationStop(s.optString("id",index.toString()),s.optString("name"),s.optDouble("latitude",Double.NaN),s.optDouble("longitude",Double.NaN))}
+    val stops = trip.navigationStops()
     val direction=trip.optString("direction");val phase=trip.optString("phase")
-    val defaultTarget=DriverNavigation.primaryStop(stops,direction,phase)
-    var selectedStopId by rememberSaveable(tripId){mutableStateOf(defaultTarget?.id)}
-    LaunchedEffect(tripId,defaultTarget?.id){selectedStopId=defaultTarget?.id;route=null;routeError=null;offRouteSamples=0;lastRouteRequest=0L;routeRequestRevision++}
+    val defaultTarget = DriverNavigation.primaryStop(stops, direction, phase, trip.bookedStageIds(), trip.hasDoorAddress())
+    var selectedStopId by rememberSaveable(tripId, phase, defaultTarget?.id){mutableStateOf(defaultTarget?.id)}
+    LaunchedEffect(tripId,selectedStopId) {
+        route = null; routeError = null; offRouteSamples = 0; lastRouteRequest = 0L
+        routeLoading = false; routeRequestRevision++
+    }
     val target=stops.firstOrNull{it.id==selectedStopId}?.takeIf{it.valid}
     val ordered=DriverNavigation.orderedStops(stops,direction)
     val permissions=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()){result->
+        if (!routingAvailable) return@rememberLauncherForActivityResult
         val allowed=result[Manifest.permission.ACCESS_FINE_LOCATION]==true||result[Manifest.permission.ACCESS_COARSE_LOCATION]==true
         if(allowed){locationError=null;navigating=true}else locationError="Location access is needed for live driver position and route guidance."
     }
     val hasLocationPermission=context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED||
         context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION)==PackageManager.PERMISSION_GRANTED
 
-    DisposableEffect(tripId,navigating,hasLocationPermission) {
-        if(!navigating||!hasLocationPermission){onDispose{} } else {
+    DisposableEffect(tripId,navigating,hasLocationPermission,routingAvailable) {
+        if(!routingAvailable||!navigating||!hasLocationPermission){onDispose{} } else {
             val manager=context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
             var listening=false
             val listener=object:LocationListener {
                 override fun onLocationChanged(location:Location){
-                    val point=GeoPoint(location.latitude,location.longitude)
-                    if(point.valid){currentLocation=point;locationError=null}
+                    val ageMs = (SystemClock.elapsedRealtimeNanos() - location.elapsedRealtimeNanos) / 1_000_000
+                    val point = GeoPoint(location.latitude, location.longitude)
+                    val previous = locationFix
+                    if (point.valid && ageMs in 0 until LOCATION_MAX_AGE_MS &&
+                        (previous == null || location.elapsedRealtimeNanos > previous.elapsedRealtimeNanos)) {
+                        locationFix = location
+                        locationError = null
+                    }
                 }
                 @Deprecated("Deprecated by Android") override fun onStatusChanged(provider:String?,status:Int,extras:Bundle?)=Unit
                 override fun onProviderEnabled(provider:String) {locationError=null}
-                override fun onProviderDisabled(provider:String) {if(currentLocation==null)locationError="Turn on device location to start route guidance."}
+                override fun onProviderDisabled(provider:String) {if(locationFix==null)locationError="Turn on device location to start route guidance."}
             }
             fun startListening() {
                 if(listening)return
@@ -115,15 +145,15 @@ internal fun openMaps(context:Context,url:String):Boolean {
                 try {
                     val providers=if(context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED)
                         listOf(LocationManager.GPS_PROVIDER,LocationManager.NETWORK_PROVIDER) else listOf(LocationManager.NETWORK_PROVIDER)
-                    providers.forEach {provider->
+                    providers.filter { it in manager.allProviders }.forEach {provider->
                         manager.getLastKnownLocation(provider)?.let{last->listener.onLocationChanged(last)}
-                        if(manager.isProviderEnabled(provider))manager.requestLocationUpdates(provider,3000L,8f,listener,Looper.getMainLooper())
+                        manager.requestLocationUpdates(provider,3000L,0f,listener,Looper.getMainLooper())
                     }
-                    if(currentLocation==null)locationError="Waiting for a GPS fix…"
+                    if(locationFix==null)locationError="Waiting for a fresh location fix…"
                 }catch(_:SecurityException){locationError="Location permission is needed while navigation is active."}
             }
             fun stopListening() {
-                if(listening){runCatching{manager.removeUpdates(listener)};listening=false;currentLocation=null}
+                if(listening){runCatching{manager.removeUpdates(listener)};listening=false;locationFix=null}
             }
             val observer=LifecycleEventObserver{_,event->when(event){
                 Lifecycle.Event.ON_START->startListening()
@@ -146,13 +176,15 @@ internal fun openMaps(context:Context,url:String):Boolean {
         val offRoute=currentRoute?.let{distanceMeters(point,it.geometry[nearestRoutePointIndex(it,point)])}?:Double.MAX_VALUE
         offRouteSamples=if(currentRoute!=null&&offRoute>120.0)offRouteSamples+1 else 0
         val shouldRequest=currentRoute==null||offRouteSamples>=3
-        val now=System.currentTimeMillis()
-        if(shouldRequest&&now-lastRouteRequest>=30000L) {
+        val now=SystemClock.elapsedRealtime()
+        if(shouldRequest&&(lastRouteRequest==0L||now-lastRouteRequest>=30000L)) {
             val request=onRequestRoute
-            if(request==null){routeError="In-app route service is not connected on this build.";return@LaunchedEffect}
+            if(request==null)return@LaunchedEffect
+            val revision = routeRequestRevision
             routeLoading=true;routeError=null;lastRouteRequest=now
             request(tripId,stop.id,point){result->
-                if(navigating&&selectedStopId==stop.id) {
+                if (revision != routeRequestRevision) return@request
+                if(routingAvailable&&navigating&&selectedStopId==stop.id) {
                     result.onSuccess {json->
                         runCatching{DriverRoute.fromJson(json)}.onSuccess {fresh->route=fresh;routeError=null;offRouteSamples=0}
                             .onFailure {routeError="The route service returned unusable directions."}
@@ -164,14 +196,16 @@ internal fun openMaps(context:Context,url:String):Boolean {
     }
 
     val nearest=route?.let{currentLocation?.let{point->nearestRoutePointIndex(it,point)}}
-    val nextManeuver=route?.let{activeRoute->activeRoute.maneuvers.firstOrNull{it.endShapeIndex> (nearest?:-1)}?:activeRoute.maneuvers.lastOrNull()}
+    val nextManeuver=nearest?.let{index->route?.let{activeRoute->activeRoute.maneuvers.firstOrNull{it.endShapeIndex>index}?:activeRoute.maneuvers.lastOrNull()}}
     val maneuverDistance=route?.let{activeRoute->currentLocation?.let{point->
         nextManeuver?.let{step->activeRoute.geometry.getOrNull(step.endShapeIndex)?.let{distanceMeters(point,it).toInt()}}
     }}
     val remaining=route?.let{activeRoute->nearest?.let{remainingDurationSeconds(activeRoute,it)}}
     val eta=remaining?.let{seconds->DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.of("Africa/Nairobi")).format(Instant.now().plusSeconds(seconds.toLong()))}
     val distanceLeft=route?.let{activeRoute->nearest?.let{remainingDistanceMeters(activeRoute,it)}}
-    val atStop=currentLocation?.let{point->target?.let{distanceMeters(point,GeoPoint(it.latitude,it.longitude))<35.0}}==true
+    val accuracy = locationFix?.takeIf { it.hasAccuracy() }?.accuracy
+    val atStop = accuracy != null && currentLocation != null && target != null &&
+        distanceMeters(currentLocation, GeoPoint(target.latitude, target.longitude)) + accuracy < 35.0
 
     HorizontalDivider()
     Text("Navigation",style=MaterialTheme.typography.titleMedium)
@@ -179,17 +213,13 @@ internal fun openMaps(context:Context,url:String):Boolean {
         Text(if(phase=="in_progress")"Route destination · ${target.name}" else "Route pickup · ${target.name}")
         NavigationMap(target,currentLocation,route,Modifier.fillMaxWidth().height(300.dp))
         Text("© OpenStreetMap contributors · OpenFreeMap",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-        if(ordered.size>1) {
-            Text("Assigned route stops",style=MaterialTheme.typography.labelLarge)
-            LazyRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                items(ordered,key={it.id}) {stop->FilterChip(selected=stop.id==target.id,onClick={selectedStopId=stop.id;route=null;routeError=null;offRouteSamples=0;lastRouteRequest=0L;routeRequestRevision++},label={Text(stop.name)})}
-            }
-        }
-        if(!navigating)Button(onClick={disclosure=true},modifier=Modifier.fillMaxWidth()) {
+        if(!routingAvailable) {
+            Text("In-app directions are unavailable. Open Google Maps for directions to the assigned stop.",style=MaterialTheme.typography.bodySmall)
+        } else if(!navigating)Button(onClick={disclosure=true},modifier=Modifier.fillMaxWidth()) {
             Icon(MireliIcons.LocationOn,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Start in-app navigation")
         } else {
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                OutlinedButton(onClick={navigating=false;routeLoading=false;route=null;currentLocation=null},modifier=Modifier.weight(1f)){Text("End navigation")}
+                OutlinedButton(onClick={navigating=false;routeLoading=false;route=null;locationFix=null;lastRouteRequest=0L;routeRequestRevision++},modifier=Modifier.weight(1f)){Text("End navigation")}
                 OutlinedButton(onClick={route=null;routeError=null;offRouteSamples=0;lastRouteRequest=0L;routeRequestRevision++},enabled=!routeLoading,modifier=Modifier.weight(1f)){
                     Text(if(route==null)"Try route again" else "Recalculate")
                 }
@@ -205,9 +235,19 @@ internal fun openMaps(context:Context,url:String):Boolean {
             Text("Open ${if(phase=="in_progress")"destination" else "pickup"} in Google Maps")
         }
         if(failed)Text("No maps app or browser could open. Install one and try again.",color=MaterialTheme.colorScheme.error)
-    } else Text("The route location is missing. Contact dispatch before travelling.")
+    } else Text("Confirm the next pickup or drop-off in the manifest, then select the correct stop. Contact dispatch if the location is unclear.")
 
-    if(disclosure)AlertDialog(onDismissRequest={disclosure=false},title={Text("Allow location for navigation")},
+    val validStops = ordered.filter { it.valid }
+    if (validStops.size > 1 || (target == null && validStops.isNotEmpty())) {
+        Text("Route stops", style = MaterialTheme.typography.labelLarge)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(validStops, key = { it.id }) { stop ->
+                FilterChip(selected = stop.id == target?.id, onClick = { selectedStopId = stop.id }, label = { Text(stop.name) })
+            }
+        }
+    }
+
+    if(disclosure&&routingAvailable)AlertDialog(onDismissRequest={disclosure=false},title={Text("Allow location for navigation")},
         text={Text("Mireli uses your device location to show your position on the map and calculate directions to the selected trip stop. Your location is sent to Mireli’s routing service only when requesting or recalculating a route. The app does not request background location permission." )},
         confirmButton={TextButton(onClick={
             disclosure=false

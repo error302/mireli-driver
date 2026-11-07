@@ -7,7 +7,9 @@ import android.security.keystore.KeyProperties
 import android.util.AtomicFile
 import com.mireli.driver.domain.*
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.InputStream
 import java.security.KeyStore
 import java.time.Instant
 import java.util.UUID
@@ -69,24 +71,11 @@ class OnboardingStore(private val context: Context) {
         encrypt(draftFile, json.toString().toByteArray())
     }
     fun attach(uri: Uri): DocumentEvidence {
-        val mime = context.contentResolver.getType(uri) ?: error("Choose a PDF, JPEG or PNG file.")
-        require(mime in setOf("application/pdf", "image/jpeg", "image/png")) { "Only PDF, JPEG and PNG files are accepted." }
-        val input = context.contentResolver.openInputStream(uri) ?: error("The selected document could not be opened.")
+        val (mime, input) = openDocument(context, uri)
         return importDocument(mime, input)
     }
-    internal fun importDocument(mime: String, input: java.io.InputStream): DocumentEvidence {
-        val bytes = input.use {
-            val output = java.io.ByteArrayOutputStream()
-            val buffer = ByteArray(8192)
-            while (true) {
-                val read = input.read(buffer)
-                if (read < 0) break
-                require(output.size() + read <= MAX_BYTES) { "Choose a document smaller than 10 MB." }
-                output.write(buffer, 0, read)
-            }
-            output.toByteArray()
-        }
-        require(validSignature(mime, bytes)) { "The file content does not match its document type." }
+    internal fun importDocument(mime: String, input: InputStream): DocumentEvidence {
+        val bytes = readDocument(mime, input, MAX_BYTES)
         val id = UUID.randomUUID().toString()
         encrypt(File(directory, "$id.enc"), bytes)
         return DocumentEvidence(id, mime, bytes.size, attachedAt = Instant.now().toString())
@@ -104,12 +93,6 @@ class OnboardingStore(private val context: Context) {
         }.getOrDefault(false)
         if (valid) null else "${OnboardingPolicy.documents.find { it.id == id }?.title ?: "Document"} cannot be read. Replace its attachment."
     }
-    fun attachmentBytes(item:DocumentEvidence):ByteArray {
-        require(Regex("[0-9a-f-]{36}").matches(item.storageId))
-        val bytes=decrypt(File(directory,"${item.storageId}.enc"))
-        require(bytes.size==item.size && validSignature(item.mime,bytes))
-        return bytes
-    }
     fun clear() {
         directory.listFiles()?.forEach { check(it.delete()) { "Could not clear the local draft." } }
         KeyStore.getInstance("AndroidKeyStore").apply { load(null); deleteEntry(KEY) }
@@ -117,6 +100,38 @@ class OnboardingStore(private val context: Context) {
     companion object {
         private const val KEY = "mireli_onboarding_v1"
         const val MAX_BYTES = 10 * 1024 * 1024
+        private val supportedTypes = setOf("application/pdf", "image/jpeg", "image/png")
+
+        private fun openDocument(context: Context, uri: Uri): Pair<String, InputStream> {
+            val mime = context.contentResolver.getType(uri)
+            require(mime != null && mime in supportedTypes) { "Choose a PDF, JPEG or PNG file." }
+            val input = context.contentResolver.openInputStream(uri)
+                ?: throw IllegalArgumentException("The selected document could not be opened.")
+            return mime to input
+        }
+
+        /** Connected uploads keep the bounded document in memory and retain no local attachment. */
+        internal fun readUpload(context: Context, uri: Uri, serverLimit: Int): Pair<String, ByteArray> {
+            val maxBytes = serverLimit.coerceAtMost(MAX_BYTES)
+            require(maxBytes > 0) { "Document uploads are currently unavailable." }
+            val (mime, input) = openDocument(context, uri)
+            return mime to readDocument(mime, input, maxBytes)
+        }
+
+        internal fun readDocument(mime: String, input: InputStream, maxBytes: Int): ByteArray = input.use {
+            val output = ByteArrayOutputStream()
+            val buffer = ByteArray(8192)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                require(read <= maxBytes - output.size()) { "Choose a smaller document. The file exceeds the upload limit." }
+                output.write(buffer, 0, read)
+            }
+            val bytes = output.toByteArray()
+            require(validSignature(mime, bytes)) { "The file content does not match its document type." }
+            bytes
+        }
+
         fun validSignature(mime: String, bytes: ByteArray): Boolean = when (mime) {
             "application/pdf" -> bytes.size >= 5 && bytes.take(5).toByteArray().toString(Charsets.US_ASCII) == "%PDF-"
             "image/jpeg" -> bytes.size >= 3 && bytes[0] == 0xff.toByte() && bytes[1] == 0xd8.toByte() && bytes[2] == 0xff.toByte()

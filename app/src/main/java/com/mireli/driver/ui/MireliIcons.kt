@@ -10,6 +10,12 @@ import androidx.compose.ui.unit.dp
 /** Small original vector set; avoids bundling the entire extended Material icon catalog. */
 object MireliIcons {
     val GridView by lazy { icon("GridView", "M3,3H9V9H3ZM15,3H21V9H15ZM3,15H9V21H3ZM15,15H21V21H15Z") }
+    val Home by lazy { icon("Home", "M3,10L12,3L21,10M5,9V21H10V15H14V21H19V9") }
+    val Calendar by lazy { icon("Calendar", "M5,5H19Q21,5 21,7V19Q21,21 19,21H5Q3,21 3,19V7Q3,5 5,5ZM7,3V7M17,3V7M3,10H21M8,15H11M14,15H17") }
+    val Clock by lazy { icon("Clock", "M12,3A9,9 0,1 0,12,21A9,9 0,1 0,12,3M12,7V12L15,14") }
+    val Mail by lazy { icon("Mail", "M5,5H19Q21,5 21,7V17Q21,19 19,19H5Q3,19 3,17V7Q3,5 5,5ZM4,7L12,13L20,7") }
+    val Refresh by lazy { icon("Refresh", "M20,11A8,8 0,0 0,6,6L3,9M3,4V9H8M4,13A8,8 0,0 0,18,18L21,15M16,15H21V20") }
+    val Cancel by lazy { icon("Cancel", "M12,3A9,9 0,1 0,12,21A9,9 0,1 0,12,3M9,9L15,15M15,9L9,15") }
     val Route by lazy { icon("Route", "M7,4A3,3 0,1 0,7,10A3,3 0,1 0,7,4M17,14A3,3 0,1 0,17,20A3,3 0,1 0,17,14M10,7H16C23,7 23,17 14,17") }
     val AccountBalanceWallet by lazy { icon("AccountBalanceWallet", "M4,5H19V9H4C1,9 1,5 4,5M3,8V20H21V9H3M17,13H21V17H17Z") }
     val PersonOutline by lazy { icon("PersonOutline", "M12,3A4,4 0,1 0,12,11A4,4 0,1 0,12,3M4,21V19C4,12 20,12 20,19V21") }

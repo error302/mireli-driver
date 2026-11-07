@@ -3,9 +3,7 @@ package com.mireli.driver.ui
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.*
-import androidx.compose.ui.Alignment
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -13,46 +11,45 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import org.json.JSONObject
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 
 @Composable fun LiveTripCard(trip:JSONObject,busy:Boolean,eligible:Boolean,command:(JSONObject,String,JSONObject)->Unit,routeRequest:RouteRequest?=null) {
     val id=trip.getString("id");val phase=trip.getString("phase");val context=LocalContext.current
     var expanded by rememberSaveable(id){mutableStateOf(false)}
     var action by rememberSaveable(id,trip.getInt("version")){mutableStateOf<String?>(null)}
-    var booking by remember(id,trip.getInt("version")){mutableStateOf<JSONObject?>(null)}
-    var code by rememberSaveable(id,trip.getInt("version")){mutableStateOf("")}
+    var bookingId by rememberSaveable(id,trip.getInt("version")){mutableStateOf<String?>(null)}
+    var code by remember(id,trip.getInt("version")){mutableStateOf("")}
     var count by rememberSaveable(id,trip.getInt("version")){mutableStateOf("")}
-    var reason by rememberSaveable(id,trip.getInt("version")){mutableStateOf("")}
+    var reason by remember(id,trip.getInt("version")){mutableStateOf("")}
     val canAct=!busy&&eligible
     val passengers=trip.getJSONArray("passengers")
-    Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(26.dp),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface)) {Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
-        Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-            Icon(MireliIcons.Train,null,tint=MaterialTheme.colorScheme.primary,modifier=Modifier.size(20.dp))
-            Text(if(phase=="completed")"Trip completed" else if(phase=="assigned")"New assignment" else "SGR transfer",style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary)
+    val booking=bookingId?.let{selectedId->
+        (0 until passengers.length()).firstNotNullOfOrNull{index->
+            passengers.getJSONObject(index).takeIf{it.getString("id")==selectedId && it.getInt("remaining")>0}
         }
+    }
+    OutlinedCard(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.outlinedCardColors(containerColor=MaterialTheme.colorScheme.surface)) {Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
+        TransferStatus(phase)
         Text(trip.getString("routeName"),style=MaterialTheme.typography.titleLarge)
-        Text("${trip.getString("serviceType").replaceFirstChar{it.uppercase()}} · ${phase.replace('_',' ')}")
-        val reporting=runCatching {DateTimeFormatter.ofPattern("EEE d MMM · HH:mm").withZone(ZoneId.of("Africa/Nairobi")).format(Instant.parse(trip.getString("departureAt")))}.getOrDefault(trip.getString("departureAt"))
-        Surface(shape=RoundedCornerShape(12.dp),color=MaterialTheme.colorScheme.surfaceVariant) {Text("Departure: $reporting EAT",Modifier.padding(12.dp),style=MaterialTheme.typography.labelLarge)}
-        Text(if(trip.getString("direction")=="TO_TERMINUS")"To Mombasa SGR Terminus" else "From Mombasa SGR Terminus")
+        TransferSchedule(trip)
+        TransferEndpoints(trip,allowIntermediateStops=true)
         if(phase=="completed") {
-            Surface(shape=RoundedCornerShape(16.dp),color=MaterialTheme.colorScheme.primaryContainer) {
-                Row(Modifier.padding(16.dp),horizontalArrangement=Arrangement.spacedBy(12.dp),verticalAlignment=Alignment.CenterVertically) {
-                    Icon(MireliIcons.CheckCircleOutline,null,tint=MaterialTheme.colorScheme.primary)
-                    Text("Journey recorded. Check Earnings for settlement status.",color=MaterialTheme.colorScheme.onPrimaryContainer)
-                }
-            }
+            DriverNotice(MireliIcons.AccountBalanceWallet,"Journey recorded","Check Earnings for settlement status.")
         }
         if(phase=="assigned") {
-            Button(onClick={action="accept"},enabled=canAct,modifier=Modifier.fillMaxWidth().heightIn(min=54.dp),shape=RoundedCornerShape(28.dp)){Text("Accept assignment")}
-            TextButton(onClick={action="decline"},enabled=canAct){Text("Decline with a reason")}
+            Button(onClick={bookingId=null;action="accept"},enabled=canAct,modifier=Modifier.fillMaxWidth().heightIn(min=50.dp),shape=RoundedCornerShape(12.dp)){
+                Icon(MireliIcons.CheckCircleOutline,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Accept assignment")
+            }
+            TextButton(onClick={bookingId=null;action="decline"},enabled=canAct){Text("Decline with a reason")}
         }
-        if(phase=="accepted")Button(onClick={action="arrive"},enabled=canAct,modifier=Modifier.fillMaxWidth()){Text("Arrived at pickup")}
+        if(phase=="accepted")Button(onClick={bookingId=null;action="arrive"},enabled=canAct,modifier=Modifier.fillMaxWidth().heightIn(min=50.dp),shape=RoundedCornerShape(12.dp)){
+            Icon(MireliIcons.LocationOn,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Arrived at pickup")
+        }
         if(phase in listOf("accepted","at_pickup","in_progress")) {
-            TripNavigation(trip,onRequestRoute=routeRequest)
-            TextButton(onClick={expanded=!expanded}){Text(if(expanded)"Hide manifest" else "View passenger manifest")}
+            if(phase=="at_pickup")Text("Check booking codes and account for each booked seat before departure.",
+                style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(onClick={expanded=!expanded}){
+                Icon(MireliIcons.Groups,null,Modifier.size(20.dp));Spacer(Modifier.width(8.dp));Text(if(expanded)"Hide manifest" else "View passenger manifest")
+            }
         }
         if(expanded)for(index in 0 until passengers.length()) {
             val p=passengers.getJSONObject(index)
@@ -68,15 +65,27 @@ import java.time.format.DateTimeFormatter
                 TextButton(onClick={runCatching{context.startActivity(Intent(Intent.ACTION_DIAL,Uri.parse("tel:$phone")))}}){Text("Call passenger")}
             }
             if(phase=="at_pickup"&&p.getInt("remaining")>0) {
-                OutlinedButton(onClick={booking=p;count=p.getInt("remaining").toString();code="";action="board"},enabled=canAct){Text("Board this party")}
-                TextButton(onClick={booking=p;reason="";action="no_show"},enabled=canAct){Text("Report remaining seats as no-show")}
+                OutlinedButton(onClick={bookingId=p.getString("id");count=p.getInt("remaining").toString();code="";action="board"},enabled=canAct){Text("Board this party")}
+                TextButton(onClick={bookingId=p.getString("id");reason="";action="no_show"},enabled=canAct){Text("Report remaining seats as no-show")}
             }
         }
-        if(phase=="at_pickup")Button(onClick={action="start"},enabled=canAct,modifier=Modifier.fillMaxWidth().heightIn(min=54.dp),shape=RoundedCornerShape(28.dp)){Text("Start journey")}
-        if(phase=="in_progress")Button(onClick={action="complete"},enabled=!busy,modifier=Modifier.fillMaxWidth().heightIn(min=54.dp),shape=RoundedCornerShape(28.dp)){Text("Complete delivered journey")}
-        Text("Reference: $id",style=MaterialTheme.typography.bodySmall)
+        if(phase=="at_pickup")Button(onClick={bookingId=null;action="start"},enabled=canAct,modifier=Modifier.fillMaxWidth().heightIn(min=50.dp),shape=RoundedCornerShape(12.dp)){
+            Icon(MireliIcons.DirectionsCar,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Start journey")
+        }
+        if(phase=="in_progress")Button(onClick={bookingId=null;action="complete"},enabled=!busy,modifier=Modifier.fillMaxWidth().heightIn(min=50.dp),shape=RoundedCornerShape(12.dp)){
+            Icon(MireliIcons.CheckCircleOutline,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Complete delivered journey")
+        }
+        if(phase in listOf("accepted","at_pickup","in_progress")) TripNavigation(trip,onRequestRoute=routeRequest)
+        Text("Reference: $id",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
     }}
-    action?.let{selected->AlertDialog(onDismissRequest={action=null},title={Text(when(selected){"board"->"Confirm boarding";"no_show"->"Report a no-show";"complete"->"Confirm delivery";else->selected.replace('_',' ').replaceFirstChar{it.uppercase()}})},text={Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
+    action?.let{selected->
+        val needsBooking=selected in listOf("board","no_show")
+        val seats=count.toIntOrNull()?:0
+        val canConfirm=(if(selected=="complete")!busy else canAct) && (!needsBooking||booking!=null) &&
+            (selected!="board" || code.trim().length>=4 && seats in 1..(booking?.getInt("remaining")?:0)) &&
+            (selected !in listOf("decline","no_show") || reason.trim().length>=5)
+        val dismiss={action=null;bookingId=null;code=""}
+        AlertDialog(onDismissRequest=dismiss,title={Text(when(selected){"board"->"Confirm boarding";"no_show"->"Report a no-show";"complete"->"Confirm delivery";else->selected.replace('_',' ').replaceFirstChar{it.uppercase()}})},text={Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
         Text(when(selected){
             "board"->"Ask this party for their booking code and enter the number of people who boarded."
             "no_show"->"Report only after departure time and a reasonable attempt to contact the party. Held funds go to operations review."
@@ -86,15 +95,17 @@ import java.time.format.DateTimeFormatter
             "arrive"->"Confirm that you are at the agreed pickup point and ready to board."
             else->"Confirm that you can serve this assignment."
         })
+        if(needsBooking && booking==null)Text("Close this dialog and select a party with seats remaining.")
         if(selected=="board") {
             OutlinedTextField(code,{code=it.take(40).uppercase()},label={Text("Passenger booking code")},singleLine=true)
             OutlinedTextField(count,{count=it.filter(Char::isDigit).take(2)},label={Text("People boarded now")},singleLine=true)
         }
         if(selected in listOf("decline","no_show"))OutlinedTextField(reason,{reason=it.take(200)},label={Text("Reason")},minLines=2)
-    }},confirmButton={TextButton(enabled=!busy&&(selected!="board"||(code.trim().length>=4&&(count.toIntOrNull()?:0)>0))&&(selected !in listOf("decline","no_show")||reason.trim().length>=5),onClick={
-        val details=JSONObject();booking?.let{details.put("bookingId",it.getString("id"))}
-        if(selected=="board")details.put("code",code).put("count",count.toInt())
+    }},confirmButton={TextButton(enabled=canConfirm,onClick={
+        val details=JSONObject()
+        if(needsBooking)booking?.let{details.put("bookingId",it.getString("id"))}
+        if(selected=="board")details.put("code",code).put("count",seats)
         if(selected in listOf("decline","no_show"))details.put("reason",reason.trim())
-        action=null;command(trip,selected,details)
-    }){Text("Confirm")}},dismissButton={TextButton(onClick={action=null}){Text("Cancel")}})}
+        dismiss();command(trip,selected,details)
+    }){Text("Confirm")}},dismissButton={TextButton(onClick=dismiss){Text("Cancel")}})}
 }

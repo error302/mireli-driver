@@ -23,6 +23,19 @@ class NavigationTest {
         assertNull(DriverNavigation.primaryStop(listOf(terminus),"UNKNOWN","accepted"))
         assertNull(DriverNavigation.primaryStop(listOf(terminus),"TO_TERMINUS","completed"))
     }
+    @Test fun passengerEndUsesBookedStopsInTravelOrder() {
+        val ferry = NavigationStop("ferry", "Ferry", -4.02, 39.61)
+        val fayaz = NavigationStop("fayaz", "Fayaz", -4.03, 39.62)
+        val shikaAdabu = NavigationStop("shika", "Shika Adabu", -4.04, 39.63)
+        val stops = listOf(terminus, ferry, fayaz, shikaAdabu)
+        val booked = setOf(ferry.id, fayaz.id)
+        assertEquals(terminus, DriverNavigation.primaryStop(stops, "FROM_TERMINUS", "accepted", booked))
+        assertEquals(ferry, DriverNavigation.primaryStop(stops, "FROM_TERMINUS", "in_progress", booked))
+        assertEquals(fayaz, DriverNavigation.primaryStop(stops, "TO_TERMINUS", "at_pickup", booked))
+        assertNull(DriverNavigation.primaryStop(stops, "TO_TERMINUS", "accepted"))
+        assertNull(DriverNavigation.primaryStop(stops, "TO_TERMINUS", "accepted", setOf("missing")))
+        assertNull(DriverNavigation.primaryStop(stops, "TO_TERMINUS", "accepted", booked, hasDoorAddress = true))
+    }
     @Test fun mapsTargetsAreHttpsDrivingDirectionsWithoutPassengerIdentity(){
         val url=DriverNavigation.directions(coast)!!
         assertEquals("www.google.com",URI(url).host)

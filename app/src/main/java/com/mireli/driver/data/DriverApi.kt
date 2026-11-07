@@ -33,9 +33,25 @@ class DriverApi {
                 out.toByteArray().toString(Charsets.UTF_8)
             }?:"{}"
             val result=runCatching {JSONObject(body)}.getOrNull()
-            if(status !in 200..299)throw DriverServiceException(status,if(status==404)"Driver sign-in is not connected at this server address yet. Contact Mireli support or retry after the driver service is live." else result?.optString("error")?.takeIf {it.isNotBlank()}?:"The driver service is unavailable. Try again later.")
+            if (status !in 200..299) {
+                val code = result?.opt("code") as? String
+                val message = (result?.opt("error") as? String)?.takeIf { it.isNotBlank() }
+                    ?: "The driver service is unavailable. Try again later."
+                throw DriverServiceException(status, message, code, token != null)
+            }
             result?:throw DriverServiceException(503,"The service returned an invalid response.")
         } finally {connection.disconnect()}
     }
 }
-class DriverServiceException(val status:Int,message:String):Exception(message)
+class DriverServiceException(
+    val status: Int,
+    message: String,
+    val code: String? = null,
+    private val usedSession: Boolean = false
+) : Exception(message) {
+    val sessionRejected: Boolean
+        get() = usedSession && status == 401 && code in setOf("UNAUTHENTICATED", "SESSION_EXPIRED")
+
+    val tripActionRejected: Boolean
+        get() = code != null && status in 400..499 && status !in setOf(401, 408, 425, 429)
+}
