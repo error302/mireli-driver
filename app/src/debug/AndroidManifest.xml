@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Debug-only design harness. Never merged into release builds. -->
+        <activity
+            android:name=".DesignPreviewActivity"
+            android:exported="true"
+            android:label="Mireli design preview"
+            android:theme="@style/Theme.Mireli" />
+    </application>
+</manifest>

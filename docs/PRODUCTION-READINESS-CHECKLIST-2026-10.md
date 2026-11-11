@@ -2,6 +2,8 @@
 
 **Reviewed:** 7 October 2026
 
+**Re-verified:** 10 November 2026 (live service and local build)
+
 **Purpose:** Turn the known legal, product, engineering and operating gaps into work that can be owned and verified.
 **Release status:** **Not ready for commercial launch or Google Play production release.** This is an operational checklist, not a Kenyan legal opinion or regulatory approval.
 
@@ -14,16 +16,44 @@
 - [x] Active-trip navigation now includes a MapLibre in-app map, OSM/OpenFreeMap attribution, foreground location permission, assigned-stop selection and an authenticated Valhalla route endpoint with server-side trip authorization and rate limiting.
 - [x] Version 0.5.0 pilot APK built and debug signature verified; unit tests and Android lint pass. The minified production AAB build also completes locally but is unsigned. See [pilot verification](PILOT-0.5.0.md).
 - [x] Three Android UI test methods passed through direct AndroidJUnitRunner execution on the Android 17/API 37 emulator, and a first-screen screenshot confirms driver sign-in appears at launch.
-- [ ] The Gradle connected-test wrapper and normal release-device matrix pass. `:app:connectedPilotDebugAndroidTest` failed before collecting tests (zero recorded tests); rerun on a stable supported emulator and physical Android devices.
-- [ ] In-app turn guidance is operational. `VALHALLA_URL` and a server-only `VALHALLA_API_TOKEN` are not configured; the live API remains 404. The pilot uses OpenFreeMap's public style and needs real-device route/GPS tests.
-- [ ] The live driver status URL is available. `https://mireli-tau.vercel.app/api/v1/driver/status` returned HTTP 404 on 7 October 2026.
-- [ ] Real OTP, new-driver registration, private document submission/review, trip assignment, payment and payout have passed end-to-end tests.
-- [ ] A production-signed Android App Bundle and Play Console submission are complete. The available APK is debug-signed and for testing only; the locally built AAB is unsigned.
-- [ ] The recent source commits have reached GitHub. Pushes failed with HTTP 500 and GitHub API requests returned 401; they are committed only in the local checkouts.
+- [ ] The Gradle connected-test wrapper and normal release-device matrix pass. `:app:connectedPilotDebugAndroidTest` still failed before collecting tests (zero recorded tests) on 10 November 2026, while the same five pilot tests pass through direct AndroidJUnitRunner execution on a physical device.
+- [ ] In-app turn guidance is operational. `VALHALLA_URL` and a server-only `VALHALLA_API_TOKEN` are not configured; the live service reported `navigationOpen:false` on 10 November 2026. The pilot uses OpenFreeMap's public style and needs real-device route/GPS tests.
+- [x] The live driver status URL is available. `https://mireli.online/api/v1/driver/status` returned HTTP 200 on 10 November 2026 from the Caddy origin, with sign-in, registration and navigation still reported closed.
+- [ ] Real OTP, new-driver registration, private document submission/review, trip assignment, payment and payout have passed end-to-end tests. On 10 November 2026 the live service still reported `emailSignInOpen:false` and `registrationOpen:false`, so no end-to-end run is possible yet.
+- [ ] A production-signed Android App Bundle and Play Console submission are complete. The available APK is debug-signed and for testing only; the AAB built locally on 10 November 2026 (version 0.9.3, 19.4 MB) is unsigned because no `MIRELI_UPLOAD_*` signing variable is set.
+- [x] The recent source commits have reached GitHub. `origin/main` is current and this checkout is one commit ahead with nothing behind (verified 10 November 2026).
 
 Do not enter fake, seeded, or demo drivers, trips, documents, earnings, payments or approvals into production. Keep test data and provider test credentials in a separate staging environment.
 
-## Live deployment diagnosis (verified 7 October 2026)
+## Blocker status re-checked 10 November 2026
+
+Checked against the live service and this checkout. Nothing below is inferred from documentation alone.
+
+- Live status endpoint: `https://mireli.online/api/v1/driver/status` returns HTTP 200 with `{"simulation":false,"phoneSignInOpen":false,"emailSignInOpen":false,"registrationOpen":false,"navigationOpen":false}`.
+
+- Serving origin: `mireli.online` resolves to Cloudflare and the response carries `via: 1.1 Caddy`. Production is Cloudflare -> Caddy on the Mireli AWS EC2 VM (`i-097df027e02b0708f`, `eu-north-1`, `127.0.0.1:3000`). Vercel is retired as a hosting target; nothing configured there reaches the origin the app calls.
+
+- Sign-in gate: `emailSignInConfigured()` needs `DRIVER_AUTH_SECRET` (32 or more characters), `BREVO_API_KEY` and a valid `BREVO_SENDER_EMAIL` on that origin. The app correctly shows the closed state while any is missing.
+
+- Clearing it: add those three values to the existing JSON in `MireliRuntimeSecret` (Secrets Manager, `eu-north-1`; its ARN is `DB_SECRET_ARN` in `/etc/mireli/bootstrap.env`), then `sudo systemctl restart mireli-app`. `/usr/local/bin/mireli-start` regenerates `/etc/mireli/runtime.env` from that secret's allowlist on every start, so a hand-edited `runtime.env` is lost on restart and a name outside the allowlist is silently dropped. Confirm the live loader lists `BREVO_API_KEY` and `DRIVER_AUTH_SECRET`, and confirm the running image digest postdates the current gate. The ordered runbook, including the delivery and replay test, is [MIRELI-WEB-HANDOFF-2026-11-10.md](../../deliverables/MIRELI-WEB-HANDOFF-2026-11-10.md).
+
+- Registration gate: still closed by design. It also needs `DRIVER_ONBOARDING_ENABLED=true`, staff authentication, a scanner mode, named reviewers, `AWS_REGION`, `DRIVER_DOCUMENT_BUCKET`, the matching `DRIVER_POLICY_VERSION` and HTTPS privacy and terms URLs.
+
+- Navigation gate: unchanged. `navigationOpen:false`; `VALHALLA_URL` and `VALHALLA_API_TOKEN` are not configured.
+
+- GitHub: resolved. `origin/main` is current, this checkout is one commit ahead and nothing is behind.
+
+- App build: version 0.9.3 (15). `:app:bundleProductionRelease` completes with a 19.4 MB AAB, but the bundle is unsigned because no `MIRELI_UPLOAD_*` signing variable is set.
+
+- Tests: the five pilot UI tests (FreshPilotTest, DriverDesignTest, NavigationUiTest) pass on a physical device through direct AndroidJUnitRunner execution. `:app:connectedPilotDebugAndroidTest` still collects zero tests.
+
+- Sign-in screen: rebuilt as a full-screen brand hero with a single primary action, verified in light and dark themes and in the closed, enabled and verification-code states. See [design direction](DESIGN-DIRECTION-0.9.1.md).
+
+No backend blocker was resolved since October. Sign-in, registration and in-app routing remain gated by configuration on the AWS VM, and the release bundle still has no upload signature.
+
+## Historical: live deployment diagnosis (7 October 2026, before the AWS cutover)
+
+Kept as a record only. Vercel was retired on 6 November 2026 when `mireli.online` cut over to the Mireli AWS EC2 VM, so the Vercel deployment records below no longer describe production.
 
 - `https://mireli-tau.vercel.app/` responds, but `/api/v1/driver/status` and `/api/v1/driver/auth/challenges` return HTTP 404. The app cannot sign in or request an OTP while those routes are absent from the deployed production build.
 - The Vercel `msafiri` production deployment is attached to `main` at `687ef7a`; that revision does not contain `src/app/api/v1/driver/[...path]/route.ts`. The `feat/mireli-alignment` branch does contain it. This is a production-branch/source mismatch, not evidence that Vercel itself is down. Vercel serves production from its configured production branch and treats other branches as previews ([Vercel Git deployments](https://vercel.com/docs/git)).
@@ -33,9 +63,7 @@ Do not enter fake, seeded, or demo drivers, trips, documents, earnings, payments
 - New-driver registration is deliberately closed in source: production staff/reviewer authentication is not implemented, the admin-auth route returns 503 outside local demo mode, and the readiness gate also requires a private-document bucket, scanner, reviewer allowlist, current policy version, and HTTPS privacy/terms URLs. Do not bypass the gate by changing its hard-coded reviewer-authentication flag; complete and security-review staff authentication first.
 - The saved GitHub CLI credential and Vercel CLI session were rejected/expired when checked. The Vercel browser dashboard is signed in, but no code was pushed or deployed during this diagnostic. The supplied GitHub token has been exposed in chat and must be revoked; authenticate through GitHub CLI/browser login rather than pasting a replacement token into chat.
 
-**VM decision:** Moving the current code to an AWS VM would not by itself fix this outage. The immediate failure is that the deployed production branch lacks the API route. A VM can host the same API after its source, database, secrets, TLS domain, private document storage, SMS provider, backups, monitoring, and deployment process are configured; without those, the same sign-in/onboarding gates will remain closed and the VM adds operational work. Fix and validate the production-branch/deployment wiring first, then compare hosting options against actual load and operating cost.
-
-**Safe path to restore service:** restore owner-authorized GitHub and Vercel CLI access locally; push the reviewed feature branch; run a fresh protected preview build and tests; provision separate staging values for SMS, auth secret, storage and scanning; test OTP and document flows with synthetic accounts/files; implement and review staff authentication; then promote a reviewed commit to the configured production branch and verify the production status endpoint and real SMS delivery. Keep driver registration closed until the complete reviewer and document controls pass.
+**Superseded:** the hosting analysis above was written on 7 October. Production has since moved to the Mireli AWS EC2 VM (cutover 6 November 2026), so the Vercel restoration path recorded here no longer applies. The current blocker and its ordered fix are in [MIRELI-WEB-HANDOFF-2026-11-10.md](../../deliverables/MIRELI-WEB-HANDOFF-2026-11-10.md).
 
 ## P0 — establish the lawful operating model
 
@@ -78,7 +106,7 @@ Official starting points: [NTSA service portal](https://serviceportal.ntsa.go.ke
 
 **Release evidence:** Live HTTPS health/status/auth routes, monitored SMS delivery and abuse tests in staging, signed deployment record.
 
-- [ ] Decide and document the production hosting/data architecture. The passenger site currently returns 404 for the driver status route. Do not move from Vercel to AWS solely for trial credits; choose one production owner and prove backups, access controls, cost, support and recovery first.
+- [ ] Keep the production hosting decision recorded and proven. Hosting is settled: `https://mireli.online` on the Mireli AWS EC2 VM behind Caddy and Cloudflare, with PostgreSQL on the host and private S3 for documents. Prove backups, access controls, cost, support and recovery on that VM, and do not reintroduce a second hosting target.
 - [ ] Deploy the backend routes required by the app: service status, request OTP, verify OTP, driver profile/application, document upload/status, driver assignments, support and account deletion.
 - [ ] Make status responses explicit and independent: existing-driver sign-in availability, new-application intake availability, maintenance state and user-facing explanation.
 - [ ] Configure a contracted SMS sender/provider and production secrets through a secret manager. Test delivery to Kenyan networks with consented internal numbers and operationally controlled test drivers.

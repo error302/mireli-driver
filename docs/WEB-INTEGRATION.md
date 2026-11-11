@@ -1,6 +1,6 @@
 # Mireli Web integration discovery — 4 October 2026
 
-Public site: https://mireli-tau.vercel.app/
+Public site: https://mireli.online (Mireli AWS EC2 VM behind Caddy and Cloudflare; Vercel is retired).
 
 ## Observed public UI (not backend verification)
 

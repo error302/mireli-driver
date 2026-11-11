@@ -1,8 +1,8 @@
 # Backend source established — 4 October 2026
 
 The owner supplied `C:\Users\user\Desktop\msafiri` and the cofounder repository
-https://github.com/demitriosojwang/msafiri. The official passenger URL remains
-https://mireli-tau.vercel.app/ and the company contact is mirelisgr001@gmail.com.
+https://github.com/demitriosojwang/msafiri. The official passenger URL is now `https://mireli.online` on the Mireli AWS EC2 VM (Vercel is
+retired) and the company contact is mirelisgr001@gmail.com.
 
 The local checkout is an older User/DriverProfile/Vehicle architecture with
 extensive uncommitted additions. Current cofounder main is
@@ -11,11 +11,7 @@ a separate LedgerEntry/RefundRecord/PayoutRecord/Credit model. An aligned web
 working copy was prepared at `C:\Users\user\Desktop\mireli driver\msafiri-web`.
 
 Both inspected Git schemas declared SQLite and the original local environment
-used a file URL. The owner reports Prisma Postgres on Vercel. The aligned web
-copy now declares PostgreSQL. GitHub's production deployment record 6793838353
-confirms the same upstream commit was deployed successfully on 1 October. The
-actual Vercel environment/database provider and migration history still need
-verification; no production database was accessed or changed.
+used a file URL. The aligned web copy now declares PostgreSQL. Production no longer runs on Vercel: it is the Mireli AWS EC2 VM (`eu-north-1`) behind Caddy and Cloudflare, with PostgreSQL 16 in the app container. Its deployed schema and migration history are still unverified from this checkout; no production database was accessed or changed.
 
 ## Android integration decisions
 

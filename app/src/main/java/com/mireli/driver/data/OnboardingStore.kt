@@ -58,7 +58,8 @@ class OnboardingStore(private val context: Context) {
         return OnboardingDraft(json.optString("fullName"), json.optString("phone"), json.optString("plate"),
             json.optString("capacity"), json.optString("licenceClass"), json.optBoolean("ownsVehicle", true),
             json.optBoolean("localNoticeAccepted"), evidence,
-            if (json.isNull("checkedAt")) null else json.getString("checkedAt"))
+            if (json.isNull("checkedAt")) null else json.getString("checkedAt"),
+            vehicleType = json.optString("vehicleType"))
     }
     fun save(draft: OnboardingDraft) {
         val docs = JSONObject()
@@ -67,6 +68,7 @@ class OnboardingStore(private val context: Context) {
         val json = JSONObject().put("fullName", draft.fullName).put("phone", draft.phone).put("plate", draft.plate)
             .put("capacity", draft.capacity).put("licenceClass", draft.licenceClass).put("ownsVehicle", draft.ownsVehicle)
             .put("localNoticeAccepted", draft.localNoticeAccepted).put("evidence", docs)
+            .put("vehicleType", draft.vehicleType)
             .put("checkedAt", draft.checkedAt ?: JSONObject.NULL).put("policyVersion", OnboardingPolicy.VERSION)
         encrypt(draftFile, json.toString().toByteArray())
     }

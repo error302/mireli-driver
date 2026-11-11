@@ -1,0 +1,47 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="96"
+    android:viewportHeight="96">
+
+    <!-- Tyres. Drawn first so the body sits on top of them. -->
+    <path
+        android:fillColor="#16232B"
+        android:pathData="M24,27 h4 a3,3 0 0 1 3,3 v9 a3,3 0 0 1 -3,3 h-4 a3,3 0 0 1 -3,-3 v-9 a3,3 0 0 1 3,-3 z" />
+    <path
+        android:fillColor="#16232B"
+        android:pathData="M24,57 h4 a3,3 0 0 1 3,3 v9 a3,3 0 0 1 -3,3 h-4 a3,3 0 0 1 -3,-3 v-9 a3,3 0 0 1 3,-3 z" />
+    <path
+        android:fillColor="#16232B"
+        android:pathData="M68,27 h4 a3,3 0 0 1 3,3 v9 a3,3 0 0 1 -3,3 h-4 a3,3 0 0 1 -3,-3 v-9 a3,3 0 0 1 3,-3 z" />
+    <path
+        android:fillColor="#16232B"
+        android:pathData="M68,57 h4 a3,3 0 0 1 3,3 v9 a3,3 0 0 1 -3,3 h-4 a3,3 0 0 1 -3,-3 v-9 a3,3 0 0 1 3,-3 z" />
+
+    <!-- Body, tapered at the nose so the heading is unambiguous at small sizes. -->
+    <path
+        android:fillColor="#0B826E"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4"
+        android:pathData="M48,7 C55,7 61,10 62,17 L64,30 L64,78 C64,84 60,88 54,88 L42,88 C36,88 32,84 32,78 L32,30 L34,17 C35,10 41,7 48,7 Z" />
+
+    <!-- Windscreen -->
+    <path
+        android:fillColor="#EAF7F3"
+        android:pathData="M39,22 L57,22 L55,36 L41,36 Z" />
+
+    <!-- Roof -->
+    <path
+        android:fillColor="#EAF7F3"
+        android:pathData="M41,41 L55,41 L55,63 L41,63 Z" />
+
+    <!-- Rear screen -->
+    <path
+        android:fillColor="#EAF7F3"
+        android:pathData="M41,68 L55,68 L53,79 L43,79 Z" />
+
+    <!-- Brand accent down the roof line -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M47,41 h2 v22 h-2 z" />
+</vector>

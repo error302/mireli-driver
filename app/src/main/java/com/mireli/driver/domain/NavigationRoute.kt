@@ -68,3 +68,16 @@ fun remainingDistanceMeters(route:DriverRoute,fromIndex:Int):Int {
     return route.geometry.drop(index).zipWithNext().sumOf{(a,b)->distanceMeters(a,b).toInt()}
 }
 fun remainingDurationSeconds(route:DriverRoute,fromIndex:Int):Int = route.maneuvers.filter{it.endShapeIndex>fromIndex}.sumOf{it.durationSeconds}
+
+/**
+ * Remaining time at the route's own average speed.
+ *
+ * Summing whole maneuver durations overstates the ETA as soon as the driver is part-way through a
+ * maneuver: it showed "4 min" with 205 m left. Scaling the service's duration by the distance still
+ * to drive stays honest and drops to zero at the destination.
+ */
+fun estimatedRemainingSeconds(route:DriverRoute,fromIndex:Int):Int {
+    val remaining=remainingDistanceMeters(route,fromIndex)
+    if(route.distanceMeters<=0||route.durationSeconds<=0)return remainingDurationSeconds(route,fromIndex)
+    return (remaining*route.durationSeconds.toDouble()/route.distanceMeters).toInt().coerceAtLeast(1)
+}

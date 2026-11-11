@@ -6,7 +6,7 @@ site's `/api/driver/me` returned 404 on 4 October 2026.
 
 ## Hosting decision
 
-The owner reports Prisma Postgres on Vercel and intends to migrate to an AWS VM.
+Production runs on the Mireli AWS EC2 VM in `eu-north-1` behind Caddy and Cloudflare at `https://mireli.online`; Vercel is retired.
 Keep PostgreSQL as the record system. Keep document bytes in a private object
 store (proposed: S3), referenced by opaque object IDs in PostgreSQL. A VM's web
 root, public bucket or passenger-upload folder is not an appropriate document store.

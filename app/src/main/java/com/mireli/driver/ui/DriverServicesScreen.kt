@@ -12,6 +12,7 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import java.time.Instant
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
@@ -26,11 +27,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.font.FontWeight
 import kotlinx.coroutines.delay
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mireli.driver.BuildConfig
 import com.mireli.driver.DriverServiceState
 import com.mireli.driver.DriverServicesViewModel
+import com.mireli.driver.domain.NavigationStop
 import com.mireli.driver.domain.OnboardingPolicy
 import org.json.JSONArray
 import org.json.JSONObject
@@ -40,14 +45,6 @@ private fun JSONArray.objects()=(0 until length()).map {getJSONObject(it)}
 private fun policyLink(raw: String): String? = runCatching {
     URI(raw).takeIf { it.scheme == "https" && it.host != null && it.userInfo == null }?.toASCIIString()
 }.getOrNull()
-@Composable private fun OnboardingStep(number:String,label:String) {
-    Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
-        Surface(shape=RoundedCornerShape(10.dp),color=MaterialTheme.colorScheme.surface) {
-            Text(number,Modifier.padding(horizontal=11.dp,vertical=6.dp),style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary,fontWeight=FontWeight.SemiBold)
-        }
-        Text(label,style=MaterialTheme.typography.bodyMedium)
-    }
-}
 @Composable fun DriverServicesScreen(onClose:(()->Unit)?=null,vm:DriverServicesViewModel=viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
     var email by rememberSaveable {mutableStateOf("")};var code by remember {mutableStateOf("")}
@@ -55,6 +52,17 @@ private fun policyLink(raw: String): String? = runCatching {
     var supportCategory by rememberSaveable {mutableStateOf("trip")};var supportMessage by remember {mutableStateOf("")}
     var payoutName by remember {mutableStateOf("")};var payoutAcknowledged by remember {mutableStateOf(false)}
     var tripHistory by rememberSaveable {mutableStateOf(false)}
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(lifecycle, vm, state.signedIn, section) {
+        if (state.signedIn && section in listOf(3, 4, 5)) {
+            lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                while (true) {
+                    vm.refreshAssignments()
+                    delay(30_000)
+                }
+            }
+        }
+    }
     var clock by remember {mutableLongStateOf(System.currentTimeMillis())}
     LaunchedEffect(state.challengeId,state.resendAt){code="";while(state.challengeId!=null&&clock<state.resendAt){clock=System.currentTimeMillis();delay(1000)};clock=System.currentTimeMillis()}
     var selectedType by rememberSaveable {mutableStateOf<String?>(null)};var selectedExpiry by rememberSaveable {mutableStateOf("")}
@@ -92,104 +100,80 @@ private fun policyLink(raw: String): String? = runCatching {
         accepted = false
         policyLinkError = false
     }
-    Scaffold(containerColor=MaterialTheme.colorScheme.background,bottomBar={if(state.signedIn)NavigationBar(containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp) {
-        NavigationBarItem(section==4,{section=4},icon={Icon(MireliIcons.Home,null)},label={Text("Home")})
-        NavigationBarItem(section==3,{section=3},icon={Icon(MireliIcons.Calendar,null)},label={Text("Trips")})
-        NavigationBarItem(section==0,{section=0},icon={Icon(MireliIcons.PersonOutline,null)},label={Text("Account")})
-        NavigationBarItem(section==1,{section=1},icon={Icon(MireliIcons.AccountBalanceWallet,null)},label={Text("Earnings")})
-        NavigationBarItem(section==2,{section=2},icon={Icon(MireliIcons.HeadsetMic,null)},label={Text("Support")})
+    if (!state.signedIn) {
+        DriverSignInScreen(
+            state = state,
+            email = email,
+            onEmailChange = { email = it },
+            code = code,
+            onCodeChange = { code = it },
+            onRequestCode = { vm.requestCode(email) },
+            onVerifyCode = { vm.verifyCode(code) },
+            onChangeEmail = { vm.changeEmail(); code = "" },
+            onRetry = vm::refreshServiceStatus,
+            resendInSeconds = ((state.resendAt - clock + 999) / 1000).coerceAtLeast(0),
+            onClose = onClose,
+            supportAddressFailed = showSupportAddress,
+            onSupport = {
+                val emailIntent = Intent(Intent.ACTION_SENDTO, Uri.fromParts("mailto", state.supportEmail, null))
+                showSupportAddress = runCatching { context.startActivity(emailIntent) }.isFailure
+            }
+        )
+        return
+    }
+    var navTarget by remember{mutableStateOf<NavTarget?>(null)}
+    // Background trip tracking follows the active trip no matter which section is open: it starts
+    // when an assignment enters an active phase and stops when none remain.
+    val trackingContext = androidx.compose.ui.platform.LocalContext.current
+    val trackingTrip = remember(state.trips) {
+        state.trips?.optJSONArray("trips")?.objects()
+            ?.filter { it.optString("phase") in listOf("accepted", "at_pickup", "in_progress") }
+            ?.minWithOrNull(transferOrder())
+    }
+    androidx.compose.runtime.LaunchedEffect(trackingTrip?.optString("id")) {
+        val id = trackingTrip?.optString("id")?.takeIf { it.isNotBlank() }
+        if (id == null) {
+            com.mireli.driver.service.TripTracking.stop(trackingContext)
+        } else if (androidx.core.content.ContextCompat.checkSelfPermission(
+                trackingContext, android.Manifest.permission.ACCESS_FINE_LOCATION
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            com.mireli.driver.service.TripTracking.sync(
+                trackingContext, id, trackingTrip?.terminusName()
+            )
+        }
+    }
+    Box(Modifier.fillMaxSize()) {
+    Scaffold(containerColor=MaterialTheme.colorScheme.background,bottomBar={NavigationBar(containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp) {
+        listOf(
+            4 to ("Home" to MireliIcons.Home),
+            3 to ("Trips" to MireliIcons.CarFront),
+            5 to ("Trains" to MireliIcons.TrainFront),
+            1 to ("Earnings" to MireliIcons.AccountBalanceWallet),
+            0 to ("Account" to MireliIcons.PersonOutline)
+        ).forEach { (target, item) ->
+            NavigationBarItem(selected=section==target,onClick={section=target},
+                icon={Icon(item.second,null)},label={Text(item.first)},
+                colors=NavigationBarItemDefaults.colors(indicatorColor=MaterialTheme.colorScheme.primaryContainer))
+        }
     }}){padding->
         LazyColumn(Modifier.fillMaxSize().padding(padding).imePadding().testTag("driver_service_list"),state=listState,contentPadding=PaddingValues(horizontal=18.dp,vertical=12.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-            item {DriverBrandHeader(if(state.signedIn) "Driver account" else "Mombasa · SGR transfers")}
+            item { if(section==4)DriverHomeTopBar{section=2} else DriverBrandHeader("Driver account") }
             if(onClose!=null)item {TextButton(onClick=onClose){Text("Back to preview")}}
             if(BuildConfig.DRIVER_SERVICE_TEST)item {Card {Text("STAGING · Simulated sign-in and payouts",Modifier.padding(16.dp))}}
             if(state.loading)item {LinearProgressIndicator(Modifier.fillMaxWidth())}
-            state.error?.takeIf{state.signedIn||state.emailSignInOpen==true}?.let {error->item {Card(colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.errorContainer)){Text(error,Modifier.padding(16.dp),color=MaterialTheme.colorScheme.onErrorContainer)}} }
-            if(!state.signedIn) {
-                item {AppearanceToggle(showSettings=false)}
-                item {SignInBoard(state.challengeId != null)}
-                item {
-                    Surface(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),color=MaterialTheme.colorScheme.surface) {
-                        Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-                            if(state.emailSignInOpen!=true||state.registrationOpen!=true) {
-                                SignInServiceNotice(state)
-                            } else if (state.challengeId==null) {
-                                Text("Enter your email to sign in or begin your driver application.",
-                                    style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            OutlinedTextField(email,{email=it.take(254)},label={Text("Email address")},
-                                leadingIcon={Icon(MireliIcons.Mail,null)},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Email),
-                                singleLine=true,enabled=state.emailSignInOpen==true && state.challengeId==null && !state.loading,
-                                colors=OutlinedTextFieldDefaults.colors(disabledLabelColor=MaterialTheme.colorScheme.onSurfaceVariant,
-                                    disabledLeadingIconColor=MaterialTheme.colorScheme.onSurfaceVariant,
-                                    disabledBorderColor=MaterialTheme.colorScheme.outline),
-                                modifier=Modifier.fillMaxWidth().testTag("driver_email_field"))
-                            if(state.challengeId==null) {
-                                Button(onClick={vm.requestCode(email)},enabled=!state.loading&&state.emailSignInOpen==true&&email.isNotBlank(),
-                                    modifier=Modifier.fillMaxWidth().heightIn(min=50.dp).testTag("driver_send_code"),
-                                    shape=RoundedCornerShape(12.dp),colors=ButtonDefaults.buttonColors(
-                                        disabledContainerColor=MaterialTheme.colorScheme.surfaceVariant,
-                                        disabledContentColor=MaterialTheme.colorScheme.onSurfaceVariant)) {
-                                    Text(if(state.emailSignInOpen==true)"Continue with email" else if(state.loading)"Checking sign-in…" else "Sign-in unavailable")
-                                }
-                                if (state.emailSignInOpen == true) Text("We will send a one-time verification code to your email.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                            } else {
-                                DriverStepProgress(0,listOf("Verify email","Documents","Review"))
-                                Text("Check your email",style=MaterialTheme.typography.titleLarge)
-                                Text("Code requested for ${state.challengeEmail}",style=MaterialTheme.typography.bodyMedium)
-                                TextButton(onClick={vm.changeEmail();code=""},enabled=!state.loading){Text("Use a different email")}
-                                state.demoCode?.let {sample->Text("Sample verification code: $sample",style=MaterialTheme.typography.bodySmall)}
-                                OutlinedTextField(code,{code=it.filter(Char::isDigit).take(6)},textStyle=MaterialTheme.typography.headlineMedium.copy(letterSpacing=androidx.compose.ui.unit.TextUnit(8f,androidx.compose.ui.unit.TextUnitType.Sp)),label={Text("6-digit verification code")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.NumberPassword),singleLine=true,enabled=!state.loading,modifier=Modifier.fillMaxWidth())
-                                Button(onClick={vm.verifyCode(code)},enabled=!state.loading&&code.length==6,modifier=Modifier.fillMaxWidth().heightIn(min=52.dp),shape=RoundedCornerShape(28.dp)){Text("Verify and continue")}
-                                TextButton(onClick={vm.requestCode(state.challengeEmail?:email)},enabled=!state.loading&&clock>=state.resendAt){Text(if(clock<state.resendAt)"Resend in ${((state.resendAt-clock+999)/1000).coerceAtLeast(0)}s" else "Resend verification code")}
-                            }
-                        }
-                    }
-                }
-                if(state.emailSignInOpen!=true||state.registrationOpen!=true)item {
-                    OutlinedButton(onClick=vm::refreshServiceStatus,enabled=!state.loading,shape=RoundedCornerShape(12.dp),modifier=Modifier.fillMaxWidth()) {
-                        Icon(MireliIcons.Refresh,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Retry connection")
-                    }
-                }
-                if (state.emailSignInOpen == true && state.registrationOpen == true) item {
-                    Card(Modifier.fillMaxWidth().testTag("driver_sign_in_promo"),shape=RoundedCornerShape(26.dp),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.primaryContainer)) {
-                        Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
-                            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                                Icon(MireliIcons.Train,null,tint=MaterialTheme.colorScheme.primary,modifier=Modifier.size(24.dp))
-                                Text("Mombasa SGR transfers",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.primary,fontWeight=FontWeight.SemiBold)
-                            }
-                            Text("Apply to drive with Mireli",style=MaterialTheme.typography.titleLarge)
-                            HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant)
-                            OnboardingStep("1","Verify your email")
-                            OnboardingStep("2","Share driver and vehicle documents")
-                            OnboardingStep("3","Wait for compliance review")
-                            Text("Assignments become available only after your account and vehicle are approved.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-                item {
-                    TextButton(onClick={
-                        val emailIntent = Intent(Intent.ACTION_SENDTO, Uri.fromParts("mailto", state.supportEmail, null))
-                        showSupportAddress = runCatching { context.startActivity(emailIntent) }.isFailure
-                    }) {
-                        Icon(MireliIcons.HeadsetMic,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Contact driver support")
-                    }
-                    if (showSupportAddress) Text("Email driver support at ${state.supportEmail}.")
-                }
-                item {Text("Do not email identity documents. Upload them only through the private in-app flow when it is available.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
-            }else {
+            state.error?.let {error->item {Card(colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.errorContainer)){Text(error,Modifier.padding(16.dp),color=MaterialTheme.colorScheme.onErrorContainer)}} }
                 item {FlowRow(horizontalArrangement=Arrangement.spacedBy(10.dp)){
                     OutlinedButton(onClick=vm::refresh,enabled=!state.loading) {
                         Icon(MireliIcons.Refresh,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Refresh account")
                     }
-                    TextButton(onClick=vm::signOut,enabled=!state.loading){Text("Sign out")}
+                    TextButton(onClick={com.mireli.driver.service.TripTracking.stop(trackingContext);vm.signOut()},enabled=!state.loading){Text("Sign out")}
                 }}
                 if(state.pendingTripAction)item {Card{Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
                     Text("One saved trip action needs confirmation",style=MaterialTheme.typography.titleMedium)
                     Text("The app keeps the same action ID after a connection failure or restart. Check it before making another trip change.")
                     Button(onClick=vm::retryTripAction,enabled=!state.loading){Text("Check saved action")}
                 }}}
-                if(section in listOf(4,3) && !state.loading && !state.tripDataCurrent)item {
+                if(section in listOf(4,3,5) && !state.loading && !state.tripDataCurrent)item {
                     Column(verticalArrangement=Arrangement.spacedBy(6.dp)) {
                         DriverNotice(MireliIcons.Refresh,"Assignments need a refresh",
                             "Refresh to check for changes before updating a trip.")
@@ -200,22 +184,43 @@ private fun policyLink(raw: String): String? = runCatching {
                     val trips=state.trips?.optJSONArray("trips")?.objects()
                     val activeTrip=trips?.filter{it.optString("phase") in listOf("accepted","at_pickup","in_progress")}
                         ?.minWithOrNull(transferOrder())
-                    item {Column(verticalArrangement=Arrangement.spacedBy(16.dp)) {
-                        DriverHomeOverview(onboarding?.optJSONObject("profile"),app,state.eligibility?.optBoolean("eligible")==true,
-                            trips,state.loading,activeNavigation=activeTrip?.let { trip -> {
-                                Surface(shape=RoundedCornerShape(16.dp),color=MaterialTheme.colorScheme.surface) {
+                    item {
+                        DriverHomeDashboard(
+                            name = onboarding?.optJSONObject("profile")?.optString("fullName")
+                                ?.takeIf{it.isNotBlank()&&it!="New applicant"},
+                            eligible = state.eligibility?.optBoolean("eligible")==true,
+                            trips = trips,
+                            earnings = state.earnings,
+                            activeNavigation = activeTrip?.let { trip -> {
+                                Surface(shape=RoundedCornerShape(MireliDesign.Radius.card),color=MaterialTheme.colorScheme.surface) {
                                     Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
                                         TripNavigation(trip,onRequestRoute=routeRequest)
                                         OutlinedButton(onClick={tripHistory=false;section=3},modifier=Modifier.fillMaxWidth()){Text("Open journey & passengers")}
                                     }
                                 }
-                            } }) {
-                                if(it==3)tripHistory=false
-                                section=it
-                            }
-                    }}
+                            } },
+                            onOpenTrips = { tripHistory=false; section=3 },
+                            onOpenTrains = { section=5 },
+                            onOpenEarnings = { section=1 },
+                            onOpenAccount = { section=0 },
+                            onOpenTrip = { tripHistory=false; section=3 },
+                            onStartNavigation = { tripId, stop -> navTarget=NavTarget(tripId,stop) },
+                            onOpenMap = { navTarget=NavTarget(null,null) }
+                        )
+                    }
+                }else if(section==5) {
+                    val allTrips=state.trips?.optJSONArray("trips")?.objects()
+                    item {
+                        StationArrivalsPanel(
+                            trips = allTrips,
+                            eligible = state.eligibility?.optBoolean("eligible")==true,
+                            stationHint = onboarding?.optJSONObject("profile")?.optString("stationHint")?.takeIf{it.isNotBlank()},
+                            onOpenTrip = { tripHistory=false; section=3 },
+                            onOpenTrips = { tripHistory=false; section=3 }
+                        )
+                    }
                 }else if(section==0&&onboarding!=null&&app!=null) {
-                    item {DriverHeading("Driver account","Manage your profile, vehicle and documents.");AppearanceToggle(showSettings=false)}
+                    item {DriverHeading("Driver account","Manage your profile, vehicle and documents.")}
                     item {DriverStepProgress(if(app.getString("status")=="approved")2 else 1,listOf("Email verified","Documents","Review"))}
                     item {Card {Column(Modifier.padding(16.dp)) {
                         Text("Application: ${app.getString("status").replace('_',' ')}",style=MaterialTheme.typography.titleMedium)
@@ -250,7 +255,7 @@ private fun policyLink(raw: String): String? = runCatching {
                         Button(onClick={vm.submit(accepted)},enabled=policiesAvailable&&!state.loading&&accepted&&app.getString("status") in listOf("draft","changes_requested"),modifier=Modifier.fillMaxWidth()){Text("Submit for compliance review")}
                     }}
                 }else if(section==1) {
-                    item {DriverHeading("Earnings & payouts","Track each settlement and your payout destination.")}
+                    item {PremiumHero("Earnings & payouts","Track each settlement and your payout destination.",eyebrow="Earnings")}
                     state.earnings?.let{statement->
                         item {DriverEarningsHero("Confirmed paid earnings",statement.getJSONArray("totals").objects().filter{it.getString("status")=="completed"}.sumOf{it.getLong("netMinor")},"Returned statement totals · pending transfers are shown separately below")}
                         item {Text("Payout destination: ${statement.optString("destinationMasked","Not set")}")}
@@ -278,7 +283,7 @@ private fun policyLink(raw: String): String? = runCatching {
                     val allTrips=state.trips?.getJSONArray("trips")?.objects()?:emptyList()
                     val visibleTrips=if(tripHistory)allTrips.filterNot{it.isActiveTransfer()} else allTrips.filter{it.isActiveTransfer()}.sortedWith(transferOrder())
                     item {
-                        DriverHeading("Trips","Mombasa SGR transfers assigned to you")
+                        PremiumHero("Trips","Mombasa SGR transfers assigned to you",eyebrow="Assignments")
                         FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                             FilterChip(selected=!tripHistory,onClick={tripHistory=false},label={Text("Assignments")},
                                 leadingIcon={Icon(MireliIcons.Calendar,null,Modifier.size(16.dp))})
@@ -323,6 +328,13 @@ private fun policyLink(raw: String): String? = runCatching {
                 }
                 if(section==0)item {
                     Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                        Text("Help",style=MaterialTheme.typography.titleLarge)
+                        DriverActionTile("Driver support","Trips, documents and payout cases",MireliIcons.HeadsetMic) { section=2 }
+                        AppearanceToggle(showSettings=true)
+                    }
+                }
+                if(section==0)item {
+                    Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
                         Text("Privacy and account deletion",style=MaterialTheme.typography.titleLarge)
                         DriverActionTile("Request account deletion","Review a request before sending it to Mireli.",MireliIcons.PrivacyTip) {
                             supportCategory="account"
@@ -331,40 +343,24 @@ private fun policyLink(raw: String): String? = runCatching {
                         }
                     }
                 }
-            }
         }
+    }
+    navTarget?.let{ target->
+        // The sheet carries the next scheduled SGR departure whenever dispatch has one for this
+        // driver. It is a scheduled time from the assignment, never a live train position.
+        val clock = rememberNow()
+        val nextDeparture = state.trips?.optJSONArray("trips")?.objects().orEmpty()
+            .mapNotNull { trip -> trip.departureInstant()?.takeIf { it.isAfter(clock) } }
+            .minOrNull()
+        DriverNavigationScreen(
+            tripId=target.tripId, stop=target.stop, onRequestRoute=routeRequest, onClose={navTarget=null},
+            nextTrain = nextDeparture?.let { countdown(clock, it) }
+        )
+    }
     }
 }
 
-@Composable
-private fun SignInBoard(verifyingEmail:Boolean) {
-    Surface(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),color=StationNavy) {
-        Row(Modifier.padding(start=18.dp,end=8.dp,top=14.dp,bottom=14.dp),
-            horizontalArrangement=Arrangement.spacedBy(6.dp),verticalAlignment=Alignment.CenterVertically) {
-            Text(if(verifyingEmail)"Verify your email" else "Driver sign-in",Modifier.weight(1f).testTag("driver_sign_in_title"),
-                color=Color.White,style=MaterialTheme.typography.headlineMedium)
-            StationLines(Modifier.size(width=76.dp,height=64.dp))
-        }
-    }
-}
-
-@Composable
-private fun SignInServiceNotice(state:DriverServiceState) {
-    val open = state.emailSignInOpen == true
-    val title = when {
-        open -> "New driver applications are paused"
-        state.emailSignInOpen == false -> "Driver sign-in is closed"
-        state.loading -> "Checking driver sign-in"
-        else -> "Driver service unavailable"
-    }
-    val detail = state.error?.takeIf { !open } ?: when {
-        open -> "Use the email linked to your existing Mireli driver account."
-        state.emailSignInOpen == false -> state.serviceMessage ?: "Check again later or contact driver support."
-        state.loading -> "Checking whether email sign-in is available."
-        else -> "Check your connection and try again."
-    }
-    DriverNotice(if(open)MireliIcons.Info else MireliIcons.Lock,title,detail)
-}
+private data class NavTarget(val tripId:String?,val stop:NavigationStop?)
 
 @Composable private fun ServerProfile(data:JSONObject,busy:Boolean,save:(String,String,String,String,String,Boolean,String)->Unit) {
     val profile=data.getJSONObject("profile");val app=data.getJSONObject("application");val version=app.getInt("version")
@@ -389,10 +385,12 @@ private fun SignInServiceNotice(state:DriverServiceState) {
         OutlinedTextField(contactPhone,{contactPhone=it.take(20)},label={Text("Kenyan contact phone")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Phone),singleLine=true,enabled=editable&&storedPhone.isBlank(),modifier=Modifier.fillMaxWidth())
         if (storedPhone.isNotBlank()) Text("Contact Support to change this number.", style = MaterialTheme.typography.bodySmall)
         OutlinedTextField(name,{name=it.take(100)},label={Text("Driver full name")},singleLine=true,enabled=editable,modifier=Modifier.fillMaxWidth())
+        key(version) { VehicleTypePicker(cab, { cab = it }, enabled = editable) }
         OutlinedTextField(plate,{plate=it.take(15).uppercase()},label={Text("Registration plate")},singleLine=true,enabled=editable,modifier=Modifier.fillMaxWidth())
-        OutlinedTextField(capacity,{capacity=it.filter(Char::isDigit).take(2)},label={Text("Passenger seats")},singleLine=true,enabled=editable,modifier=Modifier.fillMaxWidth())
+        OutlinedTextField(capacity,{capacity=it.filter(Char::isDigit).take(2)},label={Text("Passenger seats")},
+            supportingText={Text("Use the approved capacity, excluding the driver.")},
+            keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),singleLine=true,enabled=editable,modifier=Modifier.fillMaxWidth())
         OutlinedTextField(licence,{licence=it.take(20)},label={Text("Licence class")},singleLine=true,enabled=editable,modifier=Modifier.fillMaxWidth())
-        OutlinedTextField(cab,{cab=it.take(80)},label={Text("Vehicle type")},singleLine=true,enabled=editable,modifier=Modifier.fillMaxWidth())
         Row(Modifier.fillMaxWidth().toggleable(owner,enabled=editable,role=Role.Checkbox,onValueChange={owner=it})){Checkbox(owner,null);Text("I own this vehicle")}
         Button(onClick={save(name,plate,capacity,licence,cab,owner,contactPhone)},enabled=editable&&valid&&changed,modifier=Modifier.fillMaxWidth()){Text("Save profile to Mireli")}
     }

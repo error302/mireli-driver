@@ -20,6 +20,7 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
     private val sessions=DriverSessionStore(application)
     private var session:DriverSession?=null
     private var driverId:String?=null
+    private var workGeneration = 0L
     private var supportRequest:Pair<String,String>?=null
     private val mutable=MutableStateFlow(DriverServiceState())
     val state=mutable.asStateFlow()
@@ -30,6 +31,7 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
     }}
     private fun work(operation:suspend()->Unit) {
         if(mutable.value.loading)return
+        workGeneration++
         mutable.value=mutable.value.copy(loading=true,error=null)
         viewModelScope.launch {
             try{operation()}
@@ -83,26 +85,72 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
         mutable.value=mutable.value.copy(signedIn=true,challengeId=null,demoCode=null)
         loadAccount()
     }
-    private suspend fun loadAccount()=supervisorScope {
-        val token=session?.token?:return@supervisorScope
+    private suspend fun loadAccount() {
+        val token = session?.token ?: return
         mutable.value = mutable.value.copy(tripDataCurrent = false)
-        val onboarding=async{api.request("/onboarding",token=token)}
-        val earnings=async{api.request("/earnings",token=token)}
-        val me=async{api.request("/me",token=token)}
-        val support=async{api.request("/support",token=token)}
-        val trips=async{api.request("/trips",token=token)}
-        val account = me.await()
+        val account = api.request("/me", token = token)
         val accountId = account.getJSONObject("driver").getString("id")
-        val assignments = trips.await()
         val pending = withContext(Dispatchers.IO) { sessions.savedAction(accountId) != null }
         driverId = accountId
-        mutable.value = mutable.value.copy(eligibility = assignments.getJSONObject("eligibility"),
-            trips = assignments, tripDataCurrent = true, pendingTripAction = pending)
-        mutable.value = mutable.value.copy(onboarding = onboarding.await())
-        mutable.value = mutable.value.copy(support = support.await())
-        val statement = earnings.await()
-        require(statement.getString("currency") == "KES" && statement.getString("unit") == "minor")
-        mutable.value = mutable.value.copy(earnings = statement)
+        mutable.value = mutable.value.copy(eligibility = account.getJSONObject("eligibility"), pendingTripAction = pending)
+
+        var failure: Exception? = null
+        coroutineScope {
+            fun loadSection(path: String, apply: (JSONObject) -> Unit) = launch {
+                try {
+                    apply(api.request(path, token = token))
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    // A failure in one section must leave the others usable. An
+                    // authenticated session rejection still takes precedence.
+                    val sessionRejected = (error as? DriverServiceException)?.sessionRejected == true
+                    if (sessionRejected || (path != "/trips" && failure == null)) {
+                        failure = error
+                    }
+                }
+            }
+            loadSection("/trips", ::applyAssignments)
+            loadSection("/onboarding") { mutable.value = mutable.value.copy(onboarding = it) }
+            loadSection("/support") { mutable.value = mutable.value.copy(support = it) }
+            loadSection("/earnings") { statement ->
+                require(statement.getString("currency") == "KES" && statement.getString("unit") == "minor")
+                mutable.value = mutable.value.copy(earnings = statement)
+            }
+        }
+        failure?.let { throw it }
+    }
+
+    private fun applyAssignments(response: JSONObject) {
+        response.getJSONArray("trips")
+        mutable.value = mutable.value.copy(
+            eligibility = response.getJSONObject("eligibility"),
+            trips = response,
+            tripDataCurrent = true
+        )
+    }
+
+    suspend fun refreshAssignments() {
+        val activeSession = session ?: return
+        if (driverId == null || mutable.value.loading || mutable.value.emailSignInOpen == null) return
+        val generation = workGeneration
+
+        // A completed command, sign-out or manual refresh takes precedence
+        // over a GET that started with the previous state.
+        fun stillCurrent() = session === activeSession && generation == workGeneration
+        try {
+            val response = api.request("/trips", token = activeSession.token)
+            if (stillCurrent()) applyAssignments(response)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            if (!stillCurrent()) return
+            if ((error as? DriverServiceException)?.sessionRejected == true) {
+                work { clearSession("Your session expired. Sign in again.") }
+            } else {
+                mutable.value = mutable.value.copy(tripDataCurrent = false)
+            }
+        }
     }
     fun changeEmail(){if(!mutable.value.loading)mutable.value=mutable.value.copy(challengeId=null,challengeEmail=null,demoCode=null,error=null,resendAt=0)}
     fun support(category:String,message:String)=work {

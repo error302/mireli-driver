@@ -1,5 +1,10 @@
 # Mireli Driver 0.2.0 — testing and release status
 
+> **Hosting note, 10 November 2026:** this is a dated record. Vercel was retired when production
+> moved to the Mireli AWS EC2 VM at `https://mireli.online`. The Vercel URLs below are historical
+> observations, not current endpoints.
+
+
 Prepared 4 October 2026. This is a local test APK, not a production release.
 
 ## What changed

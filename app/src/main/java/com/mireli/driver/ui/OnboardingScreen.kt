@@ -82,6 +82,7 @@ fun OnboardingScreen(onClose: () -> Unit, vm: OnboardingViewModel = viewModel())
                 2 -> {
                     item {
                         Text(draft.fullName.ifBlank { "Driver name missing" }, style = MaterialTheme.typography.titleLarge)
+                        Text(draft.vehicleType.ifBlank { "Vehicle type missing" })
                         Text("${draft.plate.ifBlank { "Vehicle missing" }} · ${draft.capacity.ifBlank { "—" }} passenger seats")
                         Text("Phone verification: not connected")
                         Text("Documents saved: ${draft.evidence.size}")
@@ -116,19 +117,22 @@ private fun ProfileEditor(draft: OnboardingDraft, busy: Boolean, save: (Onboardi
     var phone by rememberSaveable(draft.phone) { mutableStateOf(draft.phone) }
     var plate by rememberSaveable(draft.plate) { mutableStateOf(draft.plate) }
     var capacity by rememberSaveable(draft.capacity) { mutableStateOf(draft.capacity) }
+    var vehicleType by rememberSaveable(draft.vehicleType) { mutableStateOf(draft.vehicleType) }
     var licence by rememberSaveable(draft.licenceClass) { mutableStateOf(draft.licenceClass) }
     var owner by rememberSaveable(draft.ownsVehicle) { mutableStateOf(draft.ownsVehicle) }
     var notice by rememberSaveable(draft.localNoticeAccepted) { mutableStateOf(draft.localNoticeAccepted) }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         OutlinedTextField(name, { name = it.take(100) }, label = { Text("Full name") }, modifier = Modifier.fillMaxWidth(), singleLine = true, enabled = !busy)
         OutlinedTextField(phone, { phone = it.take(20) }, label = { Text("Kenyan mobile number") }, modifier = Modifier.fillMaxWidth(), singleLine = true, enabled = !busy)
+        VehicleTypePicker(vehicleType, { vehicleType = it }, enabled = !busy)
         OutlinedTextField(plate, { plate = it.take(15).uppercase() }, label = { Text("Vehicle registration") }, modifier = Modifier.fillMaxWidth(), singleLine = true, enabled = !busy)
         OutlinedTextField(capacity, { capacity = it.filter(Char::isDigit).take(2) }, label = { Text("Passenger capacity") }, modifier = Modifier.fillMaxWidth(), singleLine = true, enabled = !busy)
         OutlinedTextField(licence, { licence = it.take(20) }, label = { Text("Driving licence class") }, modifier = Modifier.fillMaxWidth(), singleLine = true, enabled = !busy)
         Row(Modifier.fillMaxWidth().toggleable(owner, enabled = !busy, role = Role.Checkbox, onValueChange = { owner = it })) { Checkbox(owner, null, enabled = !busy); Text("I own this vehicle", Modifier.padding(top = 12.dp)) }
         Row(Modifier.fillMaxWidth().toggleable(notice, enabled = !busy, role = Role.Checkbox, onValueChange = { notice = it })) { Checkbox(notice, null, enabled = !busy); Text("I understand this is a local test draft. I will use sample documents; nothing is submitted or approved.", Modifier.padding(top = 8.dp)) }
         Button(onClick = { save(draft.copy(fullName = name.trim(), phone = phone.trim(), plate = plate.trim(), capacity = capacity,
-            licenceClass = licence.trim(), ownsVehicle = owner, localNoticeAccepted = notice)) }, enabled = !busy && notice,
+            licenceClass = licence.trim(), vehicleType = vehicleType.trim(), ownsVehicle = owner, localNoticeAccepted = notice)) },
+            enabled = !busy && notice && vehicleType.trim().length >= 2,
             modifier = Modifier.fillMaxWidth()) { Text("Save driver & vehicle") }
         Text("Save your changes before continuing. The saved draft survives app restarts.", style = MaterialTheme.typography.bodySmall)
     }

@@ -1,5 +1,10 @@
 # Mireli Driver 0.4.1 — sign-in first, service status clarified
 
+> **Hosting note, 10 November 2026:** this is a dated record. Vercel was retired when production
+> moved to the Mireli AWS EC2 VM at `https://mireli.online`. The Vercel URLs below are historical
+> observations, not current endpoints.
+
+
 ## What changed
 
 The app now opens on the driver sign-in form. The Kenyan phone field and SMS sign-in

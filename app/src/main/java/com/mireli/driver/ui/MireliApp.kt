@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.mireli.driver.BuildConfig
 import com.mireli.driver.DriverViewModel
 import com.mireli.driver.R
 import com.mireli.driver.data.RepositoryFactory
@@ -72,7 +73,10 @@ fun MireliApp(vm: DriverViewModel = viewModel()) {
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.dismissMessage() } }
     BackHandler(selectedId != null) { selectedId = null }
     MireliTheme {
-        if (!RepositoryFactory.isDemo) {
+        // Sample trips, sample payouts and the preview identity exist only for the demo build.
+        // A release or pilot build must never render them, even if its service URL points at a
+        // local demo repository, so the flavour is checked as well as the repository.
+        if (!RepositoryFactory.isDemo || !BuildConfig.DRIVER_SERVICE_TEST) {
             DriverServicesScreen()
             return@MireliTheme
         }
@@ -84,7 +88,7 @@ fun MireliApp(vm: DriverViewModel = viewModel()) {
         Scaffold(containerColor = Mist, snackbarHost = { SnackbarHost(snackbar) },
             bottomBar = {
                 if (selected == null) NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) {
-                    listOf("Today" to MireliIcons.GridView, "Trips" to MireliIcons.Route,
+                    listOf("Today" to MireliIcons.Home, "Trips" to MireliIcons.Route,
                         "Earnings" to MireliIcons.AccountBalanceWallet, "Account" to MireliIcons.PersonOutline)
                         .forEachIndexed { index, (title, icon) ->
                             NavigationBarItem(selected = tab == index, onClick = { tab = index },

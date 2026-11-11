@@ -5,7 +5,7 @@ Kotlin, Jetpack Compose, Android API 36 target, API 26 minimum.
 
 ## Current status
 
-**0.9.0 targets the live production backend at `https://mireli.online`.**
+**0.9.3 targets the live production backend at `https://mireli.online`.**
 The domain cutover from legacy preview hosts to `https://mireli.online` is complete and verified
 end-to-end behind Cloudflare (Full strict SSL, Caddy reverse proxy on EC2 in `eu-north-1`).
 The live driver API status route `https://mireli.online/api/v1/driver/status` responds with
@@ -27,6 +27,9 @@ The driver Home and Trips screens use a scheduled-transfer board with local depa
 route stops and the next available action. A trip change is retained until the app receives a
 matching server receipt or a definite rejection. The app offers an account-deletion request
 under Account and routes it through Mireli Support with a case reference.
+
+The [0.9.1 design direction](docs/DESIGN-DIRECTION-0.9.1.md) records the driver-app
+references, Mireli palette, route motif, shared controls and Android performance scope.
 
 Use the **Dark mode** switch, or tap **Appearance** for **Light**, **Dark** or
 **System**. New installs default to the original light palette. The choice is saved on the

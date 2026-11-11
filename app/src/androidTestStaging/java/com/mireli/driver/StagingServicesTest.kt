@@ -51,7 +51,7 @@ class StagingServicesTest {
         rule.onNodeWithText("6-digit verification code").performTextInput(Regex("[0-9]{6}").find(sample)!!.value)
         closeSoftKeyboard()
         rule.onNodeWithText("Verify and continue").performScrollTo().assertIsEnabled().performClick()
-        rule.waitUntil(30000){rule.onAllNodesWithText("Next transfer").fetchSemanticsNodes().isNotEmpty()}
+        rule.waitUntil(65000){rule.onAllNodesWithText("Next transfer").fetchSemanticsNodes().isNotEmpty()}
         screenshot("connected-home")
         val sessions = DriverSessionStore(rule.activity)
         val session = checkNotNull(sessions.load())
@@ -111,7 +111,10 @@ class StagingServicesTest {
         rule.onNodeWithText("Verify and continue").performScrollTo().assertIsEnabled().performClick()
         rule.waitUntil(30000){rule.onAllNodes(hasText("Sign out") and isEnabled()).fetchSemanticsNodes().isNotEmpty()}
         rule.onNodeWithText("Account",useUnmergedTree=true).performClick()
-        listOf("Kenyan contact phone" to phone,"Driver full name" to "Sample Native Driver","Registration plate" to "DEMO 030","Passenger seats" to "10","Licence class" to "D1","Vehicle type" to "Sample shuttle").forEach{(label,value)->
+        awaitAction("Kenyan contact phone")
+        reveal("Van")
+        rule.onNodeWithText("Van").performClick().assertIsSelected()
+        listOf("Kenyan contact phone" to phone,"Driver full name" to "Sample Native Driver","Registration plate" to "DEMO 030","Passenger seats" to "10","Licence class" to "D1").forEach{(label,value)->
             reveal(label);rule.onNodeWithText(label).performScrollTo().assertIsEnabled().performTextReplacement(value)
         }
         closeSoftKeyboard();reveal("Save profile to Mireli");rule.onNodeWithText("Save profile to Mireli").performScrollTo().assertIsEnabled().performClick()
@@ -119,6 +122,7 @@ class StagingServicesTest {
         rule.waitUntil(30000){runBlocking{api.request("/onboarding",token=session!!.token)}.getJSONObject("profile").getString("fullName")=="Sample Native Driver"}
         val saved=runBlocking {api.request("/onboarding",token=session!!.token)}
         assertEquals("Sample Native Driver",saved.getJSONObject("profile").getString("fullName"))
+        assertEquals("Van",saved.getJSONObject("profile").getString("cabType"))
         // The native HTTP importer submits the same bytes/headers as the document picker path.
         val evidence=runBlocking {api.request("/documents/identity","POST",session!!.token,bytes="%PDF-1.4\nSYNTHETIC NATIVE TEST\n%%EOF".toByteArray(),headers=mapOf("Content-Type" to "application/pdf","x-application-version" to saved.getJSONObject("application").getInt("version").toString()))}
         assertEquals("identity",evidence.getJSONObject("application").getJSONArray("documents").getJSONObject(0).getString("type"))

@@ -1,5 +1,10 @@
 # Mireli Driver 0.6.0 design pilot
 
+> **Hosting note, 10 November 2026:** this is a dated record. Vercel was retired when production
+> moved to the Mireli AWS EC2 VM at `https://mireli.online`. The Vercel URLs below are historical
+> observations, not current endpoints.
+
+
 Build date: 8 October 2026. Internal Android testing build, not a Play Store release.
 
 ## Design applied

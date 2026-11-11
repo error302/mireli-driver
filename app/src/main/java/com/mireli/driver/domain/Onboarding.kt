@@ -39,6 +39,7 @@ object OnboardingPolicy {
         if (!Regex("[A-Z0-9][A-Z0-9 -]{3,14}").matches(draft.plate.trim().uppercase())) add("Enter the vehicle registration.")
         if (draft.capacity.toIntOrNull() !in 1..60) add("Enter a passenger capacity between 1 and 60.")
         if (draft.licenceClass.trim().isEmpty()) add("Enter the driving licence class.")
+        if (draft.vehicleType.trim().length !in 2..80) add("Choose or describe your vehicle type.")
         applicable(draft.ownsVehicle).filter { it.required || draft.evidence.containsKey(it.id) }.forEach { requirement ->
             val item = draft.evidence[requirement.id]
             if (item == null) add("Attach ${requirement.title}.")
@@ -58,4 +59,5 @@ data class OnboardingDraft(
     val capacity: String = "", val licenceClass: String = "", val ownsVehicle: Boolean = true,
     val localNoticeAccepted: Boolean = false, val evidence: Map<String, DocumentEvidence> = emptyMap(),
     val checkedAt: String? = null,
+    val vehicleType: String = "",
 )

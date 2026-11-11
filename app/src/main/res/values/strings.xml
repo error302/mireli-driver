@@ -6,4 +6,10 @@
     <string name="theme_explanation">Choose how Mireli looks. System follows your phone’s appearance setting.</string>
     <string name="theme_save_error">Could not save your appearance. Please try again.</string>
     <string name="done">Done</string>
+    <string name="tracking_channel">Active trip location</string>
+    <string name="tracking_channel_detail">Mireli shares your position while a trip is active. Tracking stops when the trip ends.</string>
+    <string name="tracking_title">Mireli trip in progress</string>
+    <string name="tracking_text">Sharing your position until the trip ends. Tap to open Mireli.</string>
+    <string name="tracking_text_destination">Sharing your position to %1$s. Tap to open Mireli.</string>
+    <string name="tracking_stop">Stop tracking</string>
 </resources>

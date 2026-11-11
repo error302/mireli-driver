@@ -4,7 +4,10 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color as AndroidColor
+import android.graphics.drawable.BitmapDrawable
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
@@ -25,15 +28,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.mireli.driver.BuildConfig
+import com.mireli.driver.R
 import com.mireli.driver.domain.DriverNavigation
 import com.mireli.driver.domain.DriverRoute
 import com.mireli.driver.domain.GeoPoint
 import com.mireli.driver.domain.NavigationStop
 import com.mireli.driver.domain.RouteManeuver
+import com.mireli.driver.domain.bearingBetween
 import com.mireli.driver.domain.distanceMeters
 import com.mireli.driver.domain.nearestRoutePointIndex
 import com.mireli.driver.domain.remainingDistanceMeters
@@ -41,6 +47,7 @@ import com.mireli.driver.domain.remainingDurationSeconds
 import kotlinx.coroutines.delay
 import org.json.JSONObject
 import org.maplibre.android.MapLibre
+import org.maplibre.android.annotations.IconFactory
 import org.maplibre.android.annotations.Marker
 import org.maplibre.android.annotations.MarkerOptions
 import org.maplibre.android.annotations.Polyline
@@ -51,12 +58,56 @@ import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
+import org.maplibre.android.maps.Style
+import org.maplibre.android.style.layers.CircleLayer
+import org.maplibre.android.style.layers.PropertyFactory
+import org.maplibre.android.style.layers.SymbolLayer
+import org.maplibre.android.style.sources.GeoJsonSource
+import org.maplibre.geojson.Feature
+import org.maplibre.geojson.FeatureCollection
+import org.maplibre.geojson.Point
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 typealias RouteRequest=(tripId:String,stageId:String,origin:GeoPoint,onComplete:(Result<JSONObject>)->Unit)->Unit
 private const val LOCATION_MAX_AGE_MS = 45_000L
+
+/** Heading is only trusted above this speed; below it the route bearing is used instead. */
+private const val HEADING_MIN_SPEED_MPS = 1.5f
+
+/** How long a position change is eased over, so the car glides instead of teleporting. */
+private const val MARKER_GLIDE_MS = 900L
+
+private const val VEHICLE_ICON_ID = "mireli-vehicle-icon"
+private const val VEHICLE_LAYER_ID = "mireli-vehicle-layer"
+private const val VEHICLE_SOURCE_ID = "mireli-vehicle-source"
+private const val ACCURACY_LAYER_ID = "mireli-accuracy-layer"
+private const val ACCURACY_SOURCE_ID = "mireli-accuracy-source"
+
+/**
+ * Resolves the heading to draw the car at.
+ * Device bearing wins only when the driver is actually moving; otherwise the direction of
+ * the route ahead is used, so the car does not spin while stationary at a stop.
+ */
+internal fun resolveHeading(
+    deviceBearing:Float?,
+    speedMps:Float?,
+    previousHeading:Double?,
+    route:DriverRoute?,
+    point:GeoPoint
+):Double {
+    val moving=(speedMps?:0f)>HEADING_MIN_SPEED_MPS
+    if(moving&&deviceBearing!=null&&!deviceBearing.isNaN())return deviceBearing.toDouble()
+    val routeHeading=route?.let{active->
+        val index=nearestRoutePointIndex(active,point)
+        val behind=active.geometry.getOrNull(index)
+        val ahead=active.geometry.getOrNull((index+1).coerceAtMost(active.geometry.lastIndex))
+        if(ahead!=null&&behind!=null&&ahead!=behind)bearingBetween(behind,ahead) else null
+    }
+    if(routeHeading!=null)return routeHeading
+    return previousHeading?:0.0
+}
 
 /** Opens only our constructed HTTPS Maps URLs as an explicit navigation fallback. */
 internal fun openMaps(context:Context,url:String):Boolean {
@@ -211,7 +262,7 @@ internal fun openMaps(context:Context,url:String):Boolean {
     Text("Navigation",style=MaterialTheme.typography.titleMedium)
     if(target!=null) {
         Text(if(phase=="in_progress")"Route destination · ${target.name}" else "Route pickup · ${target.name}")
-        NavigationMap(target,currentLocation,route,Modifier.fillMaxWidth().height(300.dp))
+        NavigationMap(target,currentLocation,locationFix,route,Modifier.fillMaxWidth().height(300.dp))
         Text("© OpenStreetMap contributors · OpenFreeMap",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         if(!routingAvailable) {
             Text("In-app directions are unavailable. Open Google Maps for directions to the assigned stop.",style=MaterialTheme.typography.bodySmall)
@@ -266,74 +317,6 @@ internal fun openMaps(context:Context,url:String):Boolean {
 }
 
 private fun distanceLabel(meters:Int):String=if(meters>=1000)"%.1f km".format(meters/1000.0) else "$meters m"
-
-@Composable private fun NavigationMap(target:NavigationStop,location:GeoPoint?,route:DriverRoute?,modifier:Modifier=Modifier) {
-    val context=LocalContext.current
-    val owner=LocalLifecycleOwner.current
-    var map by remember{mutableStateOf<MapLibreMap?>(null)}
-    var loaded by remember{mutableStateOf(false)}
-    var failed by remember{mutableStateOf(false)}
-    var targetMarker by remember(map){mutableStateOf<Marker?>(null)}
-    var driverMarker by remember(map){mutableStateOf<Marker?>(null)}
-    var routeLine by remember(map){mutableStateOf<Polyline?>(null)}
-    var cameraInitialized by remember(map){mutableStateOf(false)}
-    val mapView=remember {
-        MapLibre.getInstance(context.applicationContext)
-        MapView(context)
-    }
-    DisposableEffect(mapView,owner) {
-        var started=false;var resumed=false
-        fun start(){if(!started){mapView.onStart();started=true}}
-        fun resume(){start();if(!resumed){mapView.onResume();resumed=true}}
-        fun pause(){if(resumed){mapView.onPause();resumed=false}}
-        fun stop(){pause();if(started){mapView.onStop();started=false}}
-        mapView.onCreate(Bundle())
-        val observer=LifecycleEventObserver{_,event->when(event){
-            Lifecycle.Event.ON_START->start();Lifecycle.Event.ON_RESUME->resume();Lifecycle.Event.ON_PAUSE->pause();Lifecycle.Event.ON_STOP->stop();else->Unit
-        }}
-        owner.lifecycle.addObserver(observer)
-        if(owner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))start()
-        if(owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))resume()
-        mapView.addOnDidFailLoadingMapListener{_->failed=true}
-        mapView.getMapAsync{readyMap->
-            map=readyMap
-            readyMap.uiSettings.isLogoEnabled=true
-            readyMap.uiSettings.isAttributionEnabled=true
-            readyMap.setStyle(BuildConfig.MAP_STYLE_URL){loaded=true;failed=false}
-        }
-        onDispose{owner.lifecycle.removeObserver(observer);stop();mapView.onDestroy();map=null}
-    }
-    LaunchedEffect(map,loaded,target.id) {
-        val ready=map?.takeIf{loaded}?:return@LaunchedEffect
-        targetMarker?.let{runCatching{ready.removeAnnotation(it)}}
-        targetMarker=ready.addMarker(MarkerOptions().position(LatLng(target.latitude,target.longitude)).title(target.name))
-        if(!cameraInitialized){ready.animateCamera(CameraUpdateFactory.newCameraPosition(CameraPosition.Builder().target(LatLng(target.latitude,target.longitude)).zoom(13.5).build()));cameraInitialized=true}
-    }
-    LaunchedEffect(map,loaded,location) {
-        val ready=map?.takeIf{loaded}?:return@LaunchedEffect
-        val point=location
-        if(point==null){driverMarker?.let{runCatching{ready.removeAnnotation(it)}};driverMarker=null}
-        else if(driverMarker==null){
-            driverMarker=ready.addMarker(MarkerOptions().position(LatLng(point.latitude,point.longitude)).title("Your location"))
-            if(!cameraInitialized){ready.animateCamera(CameraUpdateFactory.newCameraPosition(CameraPosition.Builder().target(LatLng(point.latitude,point.longitude)).zoom(15.5).build()));cameraInitialized=true}
-        }else driverMarker?.position=LatLng(point.latitude,point.longitude)
-    }
-    LaunchedEffect(map,loaded,route) {
-        val ready=map?.takeIf{loaded}?:return@LaunchedEffect
-        routeLine?.let{runCatching{ready.removeAnnotation(it)}};routeLine=null
-        route?.takeIf{it.geometry.size>=2}?.let{activeRoute->
-            val points=activeRoute.geometry.map{LatLng(it.latitude,it.longitude)}
-            routeLine=ready.addPolyline(PolylineOptions().addAll(points).color(AndroidColor.rgb(0,128,120)).width(6f))
-            val bounds=LatLngBounds.Builder().also{builder->points.forEach{point->builder.include(point)}}.build()
-            ready.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds,36))
-        }
-    }
-    Box(modifier) {
-        AndroidView(factory={mapView},modifier=Modifier.fillMaxSize())
-        if(!loaded&&!failed)CircularProgressIndicator(Modifier.align(Alignment.Center))
-        if(failed)Text("Map tiles are unavailable. Try again when you have a connection.",Modifier.align(Alignment.Center).padding(20.dp),color=MaterialTheme.colorScheme.error)
-    }
-}
 
 @Composable fun PassengerAddressMap(address:String) {
     val context=LocalContext.current

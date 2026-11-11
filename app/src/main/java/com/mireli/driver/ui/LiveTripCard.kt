@@ -36,12 +36,12 @@ import org.json.JSONObject
             DriverNotice(MireliIcons.AccountBalanceWallet,"Journey recorded","Check Earnings for settlement status.")
         }
         if(phase=="assigned") {
-            Button(onClick={bookingId=null;action="accept"},enabled=canAct,modifier=Modifier.fillMaxWidth().heightIn(min=50.dp),shape=RoundedCornerShape(12.dp)){
+            MireliPrimaryButton(onClick={bookingId=null;action="accept"},enabled=canAct,modifier=Modifier.fillMaxWidth()){
                 Icon(MireliIcons.CheckCircleOutline,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Accept assignment")
             }
             TextButton(onClick={bookingId=null;action="decline"},enabled=canAct){Text("Decline with a reason")}
         }
-        if(phase=="accepted")Button(onClick={bookingId=null;action="arrive"},enabled=canAct,modifier=Modifier.fillMaxWidth().heightIn(min=50.dp),shape=RoundedCornerShape(12.dp)){
+        if(phase=="accepted")MireliPrimaryButton(onClick={bookingId=null;action="arrive"},enabled=canAct,modifier=Modifier.fillMaxWidth()){
             Icon(MireliIcons.LocationOn,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Arrived at pickup")
         }
         if(phase in listOf("accepted","at_pickup","in_progress")) {
@@ -69,10 +69,10 @@ import org.json.JSONObject
                 TextButton(onClick={bookingId=p.getString("id");reason="";action="no_show"},enabled=canAct){Text("Report remaining seats as no-show")}
             }
         }
-        if(phase=="at_pickup")Button(onClick={bookingId=null;action="start"},enabled=canAct,modifier=Modifier.fillMaxWidth().heightIn(min=50.dp),shape=RoundedCornerShape(12.dp)){
+        if(phase=="at_pickup")MireliPrimaryButton(onClick={bookingId=null;action="start"},enabled=canAct,modifier=Modifier.fillMaxWidth()){
             Icon(MireliIcons.DirectionsCar,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Start journey")
         }
-        if(phase=="in_progress")Button(onClick={bookingId=null;action="complete"},enabled=!busy,modifier=Modifier.fillMaxWidth().heightIn(min=50.dp),shape=RoundedCornerShape(12.dp)){
+        if(phase=="in_progress")MireliPrimaryButton(onClick={bookingId=null;action="complete"},enabled=!busy,modifier=Modifier.fillMaxWidth()){
             Icon(MireliIcons.CheckCircleOutline,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Complete delivered journey")
         }
         if(phase in listOf("accepted","at_pickup","in_progress")) TripNavigation(trip,onRequestRoute=routeRequest)

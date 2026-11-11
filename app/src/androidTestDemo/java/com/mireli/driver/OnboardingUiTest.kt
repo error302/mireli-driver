@@ -19,8 +19,10 @@ class OnboardingUiTest {
         rule.waitUntil(15000) { rule.onAllNodesWithText("Full name").fetchSemanticsNodes().isNotEmpty() }
         fill("Full name", "Sample Driver")
         fill("Kenyan mobile number", "0712345678")
+        reveal("Tuk-tuk")
+        rule.onNodeWithText("Tuk-tuk").performClick().assertIsSelected()
         fill("Vehicle registration", "KAA123A")
-        fill("Passenger capacity", "10")
+        fill("Passenger capacity", "3")
         fill("Driving licence class", "D1")
         val notice = "I understand this is a local test draft. I will use sample documents; nothing is submitted or approved."
         reveal(notice); rule.onNodeWithText(notice).performClick()
@@ -36,6 +38,7 @@ class OnboardingUiTest {
         rule.onNodeWithText("Needs attention").assertIsDisplayed()
         val saved = OnboardingStore(rule.activity).load()
         org.junit.Assert.assertEquals("Sample Driver", saved.fullName)
+        org.junit.Assert.assertEquals("Tuk-tuk", saved.vehicleType)
         org.junit.Assert.assertNull(saved.checkedAt)
     }
 }

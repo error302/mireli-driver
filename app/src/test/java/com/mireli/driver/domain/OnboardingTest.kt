@@ -8,7 +8,7 @@ class OnboardingTest {
     private val today = LocalDate.of(2026, 10, 4)
     private fun complete(owns: Boolean = true): OnboardingDraft = OnboardingDraft(
         fullName = "Sample Driver", phone = "0712345678", plate = "KAA 123A", capacity = "10",
-        licenceClass = "D1", ownsVehicle = owns, localNoticeAccepted = true,
+        licenceClass = "D1", vehicleType = "Van", ownsVehicle = owns, localNoticeAccepted = true,
         evidence = OnboardingPolicy.applicable(owns).filter { it.required }.associate { it.id to
             DocumentEvidence("sample", "application/pdf", 100, "2027-10-04", "2026-10-04T00:00:00Z") })
     @Test fun completeDraftPassesWithoutGrantingApproval() {

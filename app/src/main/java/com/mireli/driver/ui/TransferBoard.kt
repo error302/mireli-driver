@@ -1,6 +1,13 @@
 package com.mireli.driver.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -23,8 +30,8 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-internal val StationNavy = Color(0xFF063555)
-internal val StationMint = Color(0xFF8CE1D4)
+internal val StationNavy = Color(0xFF101820)
+internal val StationMint = Color(0xFF7FE3CE)
 private val DepartureZone = ZoneId.of("Africa/Nairobi")
 private val DepartureDay = DateTimeFormatter.ofPattern("EEE, d MMM", Locale.forLanguageTag("en-KE")).withZone(DepartureZone)
 private val DepartureTime = DateTimeFormatter.ofPattern("HH:mm").withZone(DepartureZone)
@@ -68,13 +75,9 @@ internal fun StationLines(modifier: Modifier = Modifier) {
         val near = Offset(size.width * .24f, size.height * .69f)
         val bend = Offset(size.width * .53f, near.y)
         val far = Offset(size.width * .85f, size.height * .27f)
-        val faint = Color(0xFF3E6780)
         val width = 2.dp.toPx()
-        drawLine(faint, Offset(0f, size.height * .87f), Offset(size.width * .59f, size.height * .87f), width)
-        drawLine(faint, Offset(size.width * .59f, size.height * .87f), Offset(size.width, size.height * .34f), width)
-        drawLine(faint, Offset(size.width * .53f, size.height * .52f), Offset(size.width * .90f, size.height * .04f), width)
-        drawLine(StationMint, near, bend, width, StrokeCap.Round)
-        drawLine(StationMint, bend, far, width, StrokeCap.Round)
+        drawLine(StationMint.copy(alpha = .45f), near, bend, width, StrokeCap.Round)
+        drawLine(StationMint.copy(alpha = .45f), bend, far, width, StrokeCap.Round)
         drawCircle(StationNavy, 5.dp.toPx(), near)
         drawCircle(StationMint, 5.dp.toPx(), near, style = Stroke(width))
         drawCircle(StationNavy, 7.dp.toPx(), far)
@@ -111,12 +114,10 @@ internal fun TransferStatus(phase: String) {
     val inactive = phase in listOf("cancelled", "declined")
     val colors = MaterialTheme.colorScheme
     val textColor = if (inactive) colors.onSurfaceVariant else colors.onSecondaryContainer
-    Surface(shape = RoundedCornerShape(6.dp), color = if (inactive) colors.surfaceVariant else colors.secondaryContainer) {
-        Row(Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, null, tint = textColor, modifier = Modifier.size(16.dp))
-            Text(label, color = textColor, style = MaterialTheme.typography.labelMedium)
-        }
+    Row(Modifier.padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, null, tint = if (inactive) textColor else colors.primary, modifier = Modifier.size(18.dp))
+        Text(label, color = colors.onSurface, style = MaterialTheme.typography.labelLarge)
     }
 }
 
@@ -129,17 +130,11 @@ internal fun TransferSchedule(trip: JSONObject) {
         "charter", "private" -> "Private charter"
         else -> "SGR transfer"
     }
-    Surface(shape = RoundedCornerShape(8.dp), color = colors.surfaceVariant) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(MireliIcons.Clock, null, tint = colors.onSurfaceVariant, modifier = Modifier.size(22.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(if (departure == null) "Departure time pending" else "${DepartureTime.format(departure)} EAT",
-                    style = MaterialTheme.typography.titleMedium, color = colors.onSurface)
-                Text(if (departure == null) service else "Departure • ${DepartureDay.format(departure)} • $service",
-                    style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
-            }
-        }
+    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(if (departure == null) "Departure time pending" else "${DepartureTime.format(departure)} EAT",
+            style = MaterialTheme.typography.headlineMedium.copy(fontFeatureSettings = MireliDesign.NumberFeatures), color = colors.onSurface)
+        Text(if (departure == null) service else "${DepartureDay.format(departure)} • $service",
+            style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
     }
 }
 
@@ -177,8 +172,12 @@ internal fun TransferEndpoints(trip: JSONObject, allowIntermediateStops: Boolean
                 Spacer(Modifier.width(8.dp))
                 Text(if (expanded) "Hide route stops" else "Show route stops")
             }
-            if (expanded) otherStops.forEach { stop ->
-                EndpointLabel("Route stop", stop.name)
+            AnimatedVisibility(expanded,
+                enter = expandVertically(tween(MireliDesign.DetailDurationMs, easing = FastOutSlowInEasing)) + fadeIn(tween(MireliDesign.DetailDurationMs)),
+                exit = shrinkVertically(tween(144)) + fadeOut(tween(144))) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    otherStops.forEach { stop -> Text(stop.name, style = MaterialTheme.typography.bodyMedium) }
+                }
             }
         }
     }
