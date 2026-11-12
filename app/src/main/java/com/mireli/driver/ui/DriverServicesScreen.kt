@@ -224,7 +224,14 @@ private fun policyLink(raw: String): String? = runCatching {
                     item {DriverStepProgress(if(app.getString("status")=="approved")2 else 1,listOf("Email verified","Documents","Review"))}
                     item {Card {Column(Modifier.padding(16.dp)) {
                         Text("Application: ${app.getString("status").replace('_',' ')}",style=MaterialTheme.typography.titleMedium)
-                        Text(if(state.eligibility?.optBoolean("eligible")==true)"Eligible for new assignments" else "Approval required before new assignments")
+                        Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                            VerifiedBadge(
+                                verified = state.eligibility?.optBoolean("verified")==true,
+                                approvedDocuments = state.eligibility?.optInt("verifiedDocuments",0)?:0,
+                                requiredDocuments = state.eligibility?.optInt("requiredDocuments",0)?:0
+                            )
+                            Text(if(state.eligibility?.optBoolean("eligible")==true)"Eligible for new assignments" else "Approval required before new assignments")
+                        }
                         app.optString("reviewReason").takeIf{it.isNotBlank()&&it!="null"}?.let{Text(it)}
                         if (app.getString("status") == "approved") {
                             Text("Saving profile changes or replacing evidence sends the application back for review.")

@@ -36,6 +36,11 @@ import org.json.JSONObject
  */
 internal val PremiumGradient = listOf(Color(0xFF063555), Color(0xFF007F79))
 
+/** The verification blue. Deliberately distinct from the teal brand accent so a
+ *  blue check never reads as decoration: it is only ever shown for a driver the
+ *  server has evaluated as fully verified. */
+internal val VerifiedBlue = Color(0xFF1D7AF3)
+
 @Composable internal fun PremiumHero(
     title: String,
     subtitle: String? = null,
@@ -229,5 +234,48 @@ internal val PremiumGradient = listOf(Color(0xFF063555), Color(0xFF007F79))
             HorizontalDivider()
             DriverActionTile("Help & support", "Account, document and payout cases", MireliIcons.HeadsetMic) { open(2) }
         }
+    }
+}
+
+/**
+ * The blue check. A driver earns it only when every required document is
+ * approved, scanned clean and unexpired, the application is approved and the
+ * account is active. It is derived from the server's eligibility evaluation on
+ * every refresh, so it drops the moment a document expires or evidence is
+ * replaced. Nothing here grants approval; it only shows it.
+ */
+@Composable
+internal fun VerifiedBadge(
+    verified: Boolean,
+    modifier: Modifier = Modifier,
+    compact: Boolean = false,
+    approvedDocuments: Int = 0,
+    requiredDocuments: Int = 0
+) {
+    val tint = if (verified) VerifiedBlue else MaterialTheme.colorScheme.onSurfaceVariant
+    val background = if (verified) VerifiedBlue.copy(alpha = .12f) else MaterialTheme.colorScheme.surfaceVariant
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(50))
+            .background(background)
+            .padding(horizontal = if (compact) 8.dp else 10.dp, vertical = if (compact) 3.dp else 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+        Icon(
+            if (verified) MireliIcons.VerifiedUser else MireliIcons.CheckCircleOutline,
+            contentDescription = if (verified) "Verified driver" else "Verification pending",
+            tint = tint,
+            modifier = Modifier.size(if (compact) 13.dp else 16.dp)
+        )
+        Text(
+            when {
+                verified -> "Verified driver"
+                requiredDocuments > 0 -> "Verification $approvedDocuments/$requiredDocuments"
+                else -> "Not verified"
+            },
+            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+            color = tint
+        )
     }
 }

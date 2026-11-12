@@ -199,7 +199,7 @@ internal fun DriverHomeTopBar(onSupport: () -> Unit) {
 }
 
 @Composable
-private fun Greeting(name: String?, online: Boolean, onOnlineChange: (Boolean) -> Unit) {
+private fun Greeting(name: String?, online: Boolean, verified: Boolean, onOnlineChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(MireliDesign.Space.sm)) {
         DriverAvatar(name)
@@ -209,7 +209,13 @@ private fun Greeting(name: String?, online: Boolean, onOnlineChange: (Boolean) -
                 style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Text(name?.substringBefore(' ') ?: "Driver", style = MaterialTheme.typography.headlineSmall)
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(name?.substringBefore(' ') ?: "Driver", style = MaterialTheme.typography.headlineSmall)
+                // Only drawn once the server has evaluated every required document
+                // as approved, clean and current. No local state can turn it on.
+                if (verified) VerifiedBadge(verified = true, compact = true)
+            }
         }
         AvailabilityPill(online, onOnlineChange)
     }
@@ -676,7 +682,7 @@ internal fun DriverHomeDashboard(
     }
 
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(MireliDesign.Space.md)) {
-        Greeting(name, online && eligible) { requested ->
+        Greeting(name, online && eligible, eligible) { requested ->
             online = requested
             if (!eligible) onOpenAccount()
         }
