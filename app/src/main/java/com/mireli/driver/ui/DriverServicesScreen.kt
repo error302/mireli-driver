@@ -171,7 +171,7 @@ private fun policyLink(raw: String): String? = runCatching {
         }
     }}){padding->
         LazyColumn(Modifier.fillMaxSize().padding(padding).imePadding().testTag("driver_service_list"),state=listState,contentPadding=PaddingValues(horizontal=18.dp,vertical=12.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-            if(section==4)item { DriverHomeTopBar { section=2 } }
+            if(section==4)item { DriverHomeTopBar(onOpenMap = { navTarget = NavTarget(null, null) }, onSupport = { section=2 }) }
             if(section==0)item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.weight(1f)) { DeparturePageTitle("Driver account") }
@@ -192,7 +192,14 @@ private fun policyLink(raw: String): String? = runCatching {
                     }
                 }
             }
-            if(section==3)item { DeparturePageTitle("Your transfers", "Departure times in East Africa Time (EAT)") }
+            if(section==3)item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) { DeparturePageTitle("Your transfers", "Departure times in East Africa Time (EAT)") }
+                    IconButton(onClick = { navTarget = NavTarget(null, null) }) {
+                        Icon(MireliIcons.Map, "Open live map", tint = MaterialTheme.colorScheme.secondary)
+                    }
+                }
+            }
             if(section==2)item {
                 DeparturePageTitle("Driver support", "For emergencies, contact local emergency services directly.")
                 TextButton(onClick = { section=0 }) { Text("Back to account") }
@@ -240,7 +247,8 @@ private fun policyLink(raw: String): String? = runCatching {
                             onOpenAccount = { section=0 },
                             onOpenTrip = { id -> highlightedTripId=id; tripHistory=false; section=3 },
                             onStartNavigation = { tripId, stop -> navTarget=NavTarget(tripId,stop) },
-                            onOpenMap = { navTarget=NavTarget(null,null) }
+                            onOpenMap = { navTarget=NavTarget(null,null) },
+                            renewalNote = renewalNote(state.eligibility)
                         )
                     }
                 }else if(section==0&&onboarding!=null&&app!=null) {
@@ -257,6 +265,7 @@ private fun policyLink(raw: String): String? = runCatching {
                         DepartureValueRow("Application", if (applicationStatus == "submitted") "In review" else applicationStatus.readableStatus(),
                             confirmed = applicationStatus == "approved")
                         DepartureNote(if(state.eligibility?.optBoolean("eligible")==true)"Eligible for new assignments" else "Approval required before new assignments")
+                        renewalNote(state.eligibility)?.let { DepartureNote(it) }
                         app.optString("reviewReason").takeIf{it.isNotBlank()&&it!="null"}?.let{Text(it)}
                         if (applicationStatus == "approved") {
                             DepartureNote("Saving profile changes or replacing evidence sends the application back for review.")
@@ -449,6 +458,14 @@ private fun policyLink(raw: String): String? = runCatching {
 }
 
 private data class NavTarget(val tripId:String?,val stop:NavigationStop?)
+
+private fun renewalNote(eligibility: JSONObject?): String? {
+    val grace = eligibility?.opt("graceUntil") as? String
+    if (grace != null) return "Renew by ${grace.take(10)} to keep your blue check. New assignments require current documents."
+    return if ((eligibility?.optJSONArray("expiringDocuments")?.length() ?: 0) > 0) {
+        "A required document expires within 30 days. Check your documents for the expiry date."
+    } else null
+}
 
 @Composable private fun ServerProfile(data:JSONObject,busy:Boolean,save:(String,String,String,String,String,Boolean,String)->Unit) {
     val profile=data.getJSONObject("profile");val app=data.getJSONObject("application");val version=app.getInt("version")

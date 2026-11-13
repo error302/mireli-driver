@@ -163,9 +163,12 @@ private fun DriverAvatar(name: String?, size: Dp = 44.dp) {
 }
 
 @Composable
-internal fun DriverHomeTopBar(onSupport: () -> Unit) {
+internal fun DriverHomeTopBar(onOpenMap: () -> Unit, onSupport: () -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text("Home", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+        IconButton(onClick = onOpenMap) {
+            Icon(MireliIcons.Map, "Open live map", tint = MaterialTheme.colorScheme.secondary)
+        }
         ThemeIconButton(tint = MaterialTheme.colorScheme.secondary)
         IconButton(onClick = onSupport) {
             Icon(MireliIcons.HeadsetMic, "Help and support", tint = MaterialTheme.colorScheme.secondary)
@@ -498,12 +501,17 @@ internal fun DriverHomeDashboard(
     onOpenAccount: () -> Unit,
     onOpenTrip: (String) -> Unit,
     onStartNavigation: (String, NavigationStop) -> Unit,
-    onOpenMap: () -> Unit
+    onOpenMap: () -> Unit,
+    renewalNote: String? = null
 ) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(MireliDesign.Space.md)) {
         DriverIdentity(name, verified)
+        if (renewalNote != null) {
+            DepartureNote(renewalNote)
+            TextButton(onClick = onOpenAccount) { Text("Renew documents") }
+        }
         if (!eligible) {
-            ApplicationPanel(applicationStatus, onOpenAccount, onRefresh)
+            if (renewalNote == null) ApplicationPanel(applicationStatus, onOpenAccount, onRefresh)
             return@Column
         }
 
