@@ -492,7 +492,7 @@ private fun PickupRow(trip: JSONObject, party: JSONObject, index: Int, onOpenTri
                         when {
                             clock == null -> party.optString("stageName").takeIf { it.isNotBlank() }
                                 ?: "Departure time pending"
-                            pending -> "$clock train"
+                            pending -> "$clock cab departure"
                             else -> "on board · $clock"
                         }
                     )

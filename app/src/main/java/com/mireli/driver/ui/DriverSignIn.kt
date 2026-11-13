@@ -50,11 +50,11 @@ fun DriverSignInScreen(
 
     LazyColumn(
         Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
-            .navigationBarsPadding().imePadding(),
+            .statusBarsPadding().navigationBarsPadding().imePadding(),
         contentPadding = PaddingValues(bottom = 16.dp)
     ) {
     item {
-        Surface(Modifier.statusBarsPadding(), color = StationNavy) {
+        Surface(color = StationNavy) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 24.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Surface(shape = MaterialTheme.shapes.small, color = Color.White) {
