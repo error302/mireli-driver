@@ -33,6 +33,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -177,10 +178,12 @@ internal fun NavigationMap(
     controls: Boolean = true,
     /** False draws the car pointing up: a north-up preview would otherwise show it sideways. */
     rotateVehicle: Boolean = true,
-    satelliteToken: String? = null
+    satelliteToken: String? = null,
+    onLongPress: ((GeoPoint) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
+    val latestLongPress by rememberUpdatedState(onLongPress)
     val dark = MaterialTheme.colorScheme.background.luminanceIsDark()
     val prefs = remember { context.getSharedPreferences("map", android.content.Context.MODE_PRIVATE) }
     var layerChoice by remember { mutableStateOf(MapLayer.read(prefs)) }
@@ -253,6 +256,11 @@ internal fun NavigationMap(
             // The SDK compass floats over the status bar; we draw our own control instead.
             ready.uiSettings.isCompassEnabled = false
             ready.uiSettings.setAllGesturesEnabled(interactive)
+            ready.addOnMapLongClickListener { coordinate ->
+                val action = latestLongPress ?: return@addOnMapLongClickListener false
+                action(GeoPoint(coordinate.latitude, coordinate.longitude))
+                true
+            }
             ready.addOnCameraMoveStartedListener { reason ->
                 // Only a real finger gesture stops the chase; our own animations never do.
                 if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE) {
@@ -315,7 +323,7 @@ internal fun NavigationMap(
         }
     }
 
-    LaunchedEffect(map, loaded, styleVersion, target?.id) {
+    LaunchedEffect(map, loaded, styleVersion, target) {
         val ready = map?.takeIf { loaded } ?: return@LaunchedEffect
         targetMarker?.let { runCatching { ready.removeAnnotation(it) } }
         targetMarker = null

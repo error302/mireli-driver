@@ -39,8 +39,8 @@ fun navigationPhase(
 ): NavPhase = when {
     atStop -> NavPhase.ARRIVED
     !hasFix -> NavPhase.NO_FIX
-    offRoute -> NavPhase.OFF_ROUTE
     routeError != null && !loading -> NavPhase.FAILED
+    offRoute -> NavPhase.OFF_ROUTE
     loading || !hasRoute -> NavPhase.ROUTING
     else -> NavPhase.GUIDING
 }

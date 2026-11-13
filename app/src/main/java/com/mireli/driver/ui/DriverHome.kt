@@ -18,8 +18,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
-import com.mireli.driver.domain.DriverNavigation
 import com.mireli.driver.domain.NavigationStop
+import com.mireli.driver.TrainSchedule
 import com.mireli.driver.domain.SgrTimetable
 import kotlinx.coroutines.delay
 import org.json.JSONObject
@@ -267,72 +267,91 @@ private fun NextTransferCard(
             Text(if (phase == "assigned") "Review & accept" else "Open transfer",
                 style = MaterialTheme.typography.titleMedium)
         }
-        if (stop != null && phase != "in_progress") {
+        if (stop != null) {
             TextButton(onClick = { onStartNavigation(tripId, stop) }, modifier = Modifier.align(Alignment.End)) {
-                Text("Navigate")
+                Text(if (phase == "in_progress") "Navigate to drop-off" else "Navigate to pickup")
             }
         }
     }
 }
 
-/** Compact published-timetable awareness, shown when nothing is assigned. */
 @Composable
-private fun SgrTodayPanel(now: Instant) {
-    val events = remember(now.toEpochMilli() / 60_000L) { SgrTimetable.upcoming(now) }
-    var open by rememberSaveable { mutableStateOf(false) }
-    MireliPanel(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier.fillMaxWidth().clickable { open = !open },
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(MireliDesign.Space.xs)
-        ) {
-            Icon(MireliIcons.TrainFront, null, tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(18.dp))
-            Text("SGR today · Mombasa Terminus", style = MaterialTheme.typography.titleSmall,
-                modifier = Modifier.weight(1f))
-            Icon(if (open) MireliIcons.ExpandLess else MireliIcons.ExpandMore, "SGR timetable",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+private fun SgrTodayPanel(now: Instant, schedule: TrainSchedule, onRefresh: () -> Unit) {
+    val events = remember(schedule.services, now.epochSecond / 60) {
+        SgrTimetable.upcoming(schedule.services.orEmpty(), now)
+    }
+    val colors = MaterialTheme.colorScheme
+    val date = now.atZone(NairobiZone).toLocalDate()
+    val arrivals = events.filter { it.service.movement == SgrTimetable.Movement.Arrival }
+    val departures = events.filter { it.service.movement == SgrTimetable.Movement.Departure }
+    val nextArrival = arrivals.firstOrNull { it.at >= now }
+    val nextDeparture = departures.firstOrNull { it.at >= now }
+    val recentArrival = arrivals.lastOrNull { it.at < now }
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Mombasa Terminus", style = MaterialTheme.typography.titleLarge)
+        Text("SGR timetable · East Africa Time", style = MaterialTheme.typography.bodySmall,
+            color = colors.onSurfaceVariant)
+        if (schedule.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+        if (schedule.failed) {
+            Text(if (schedule.services == null) "Couldn’t load train times." else "Showing the last loaded timetable.",
+                style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+            TextButton(onClick = onRefresh) { Text("Refresh timetable") }
         }
-        val next = events.firstOrNull()
-        if (next != null) {
-            Text(
-                "${next.kind} at ${next.clock} EAT · ${next.service.label}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+        if (schedule.services?.isEmpty() == true) {
+            Text("No scheduled services are listed.", style = MaterialTheme.typography.bodyMedium)
         }
-        if (open) {
-            events.forEach { event ->
-                val minutes = Duration.between(now, event.at).toMinutes()
-                Row(
-                    Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(MireliDesign.Space.sm)
-                ) {
-                    Text(
-                        event.clock,
-                        style = MaterialTheme.typography.titleMedium
-                            .copy(fontFeatureSettings = MireliDesign.NumberFeatures),
-                        color = if (minutes <= 15) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurface
-                    )
-                    MireliStatusChip(
-                        event.kind,
-                        if (minutes <= 15) ChipTone.Alert else ChipTone.Positive
-                    )
-                    Text(
-                        event.service.label,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis
+        if (events.isNotEmpty()) {
+            Column {
+                listOfNotNull(
+                    nextArrival?.let { "Next arrival" to it },
+                    nextDeparture?.let { "Next departure" to it },
+                    recentArrival?.let { "Scheduled arrival" to it },
+                ).forEachIndexed { index, (label, event) ->
+                    if (index > 0) HorizontalDivider(color = colors.outlineVariant)
+                    TrainTimeRow(label, event, date, Modifier.staggerIn(index))
+                }
+            }
+            DepartureDisclosure("More train times", "Published timetable") {
+                events.asSequence().filter { it.at >= now }.take(6).forEachIndexed { index, event ->
+                    if (index > 0) HorizontalDivider(color = colors.outlineVariant)
+                    TrainTimeRow(
+                        if (event.service.movement == SgrTimetable.Movement.Arrival) "Arrival from Nairobi" else "Departure to Nairobi",
+                        event, date, Modifier.staggerIn(index)
                     )
                 }
             }
-            Text(
-                "Published Madaraka Express timetable. Confirm with Kenya Railways; your dispatch assignment stays authoritative.",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Text("Scheduled times only. Check with the station for actual arrivals or delays.",
+                style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
         }
+    }
+}
+
+@Composable
+private fun TrainTimeRow(
+    label: String,
+    event: SgrTimetable.Event,
+    today: java.time.LocalDate,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MaterialTheme.colorScheme
+    val day = event.at.atZone(NairobiZone).toLocalDate()
+    val dayLabel = when (day) {
+        today -> null
+        today.plusDays(1) -> "Tomorrow"
+        else -> DayFormat.format(event.at)
+    }
+    Row(modifier.fillMaxWidth().padding(vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(MireliIcons.TrainFront, null, Modifier.size(22.dp),
+            tint = if (event.service.movement == SgrTimetable.Movement.Arrival) colors.primary else colors.secondary)
+        Column(Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.titleSmall)
+            Text(listOfNotNull(event.service.name, dayLabel).joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+        }
+        Text(ClockFormat.format(event.at), style = MaterialTheme.typography.titleMedium
+            .copy(fontFeatureSettings = MireliDesign.NumberFeatures), color = colors.secondary)
     }
 }
 
@@ -439,7 +458,9 @@ internal fun DriverHomeDashboard(
     onOpenMap: () -> Unit,
     onOpenEarnings: () -> Unit,
     paidAmount: String? = null,
-    renewalNote: String? = null
+    renewalNote: String? = null,
+    schedule: TrainSchedule = TrainSchedule(),
+    onRefreshTimetable: () -> Unit = {}
 ) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(MireliDesign.Space.md)) {
         DriverIdentity(name, verified)
@@ -447,8 +468,10 @@ internal fun DriverHomeDashboard(
             DepartureNote(renewalNote)
             TextButton(onClick = onOpenAccount) { Text("Renew documents") }
         }
+        val now = rememberNow()
         if (!eligible) {
             if (renewalNote == null) ApplicationPanel(applicationStatus, onOpenAccount, onRefresh)
+            SgrTodayPanel(now, schedule, onRefreshTimetable)
             DriverOverviewLink("Live map", "Find a destination or check your location", MireliIcons.Map, onOpenMap)
             HorizontalDivider()
             DriverOverviewLink("Trip activity", "Assignments and journey history", MireliIcons.CarFront, onOpenTrips)
@@ -457,16 +480,12 @@ internal fun DriverHomeDashboard(
             return@Column
         }
 
-        val now = rememberNow()
         val currentTrips = trips.orEmpty().takeIf { tripsCurrent }.orEmpty()
         val nextTrip = remember(currentTrips) {
             currentTrips.filter { it.isActiveTransfer() }.minWithOrNull(transferOrder())
         }
         if (nextTrip != null) {
-            val stops = nextTrip.navigationStops()
-            val stationStop = stops.firstOrNull { it.valid && it.name == nextTrip.terminusName() }
-                ?: stops.firstOrNull { it.valid }
-            NextTransferCard(nextTrip, now, stationStop, onStartNavigation, onOpenTrip)
+            NextTransferCard(nextTrip, now, nextTrip.primaryNavigationStop(), onStartNavigation, onOpenTrip)
             val localDate = now.atZone(NairobiZone).toLocalDate()
             val later = currentTrips.filter { trip ->
                 trip.isActiveTransfer() && trip.optString("id") != nextTrip.optString("id") &&
@@ -503,10 +522,10 @@ internal fun DriverHomeDashboard(
                     TextButton(onClick = onOpenTrips) { Text("View trips") }
                 }
         }
+        SgrTodayPanel(now, schedule, onRefreshTimetable)
         DriverOverviewLink("Live map", "Find a destination or check your location", MireliIcons.Map, onOpenMap)
         HorizontalDivider()
         DriverOverviewLink("Earnings", paidAmount ?: "View settlements and payout details", MireliIcons.AccountBalanceWallet, onOpenEarnings)
-        SgrTodayPanel(now)
     }
 }
 
@@ -641,7 +660,7 @@ private fun NextTrainCard(next: Departure, now: Instant, onOpenTrip: (String) ->
     val departure = next.time ?: return
     val urgent = urgency(now, departure) == Urgency.Now
     MireliPanel(Modifier.fillMaxWidth()) {
-        Text("Next train", style = MaterialTheme.typography.labelLarge,
+        Text("Next transfer", style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(

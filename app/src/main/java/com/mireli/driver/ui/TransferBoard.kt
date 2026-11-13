@@ -55,6 +55,9 @@ internal fun JSONObject.bookedStageIds(): Set<String> =
 
 internal fun JSONObject.hasDoorAddress(): Boolean = passengerManifest().any { it.optBoolean("homePickup") }
 
+internal fun JSONObject.primaryNavigationStop(stops: List<NavigationStop> = navigationStops()): NavigationStop? =
+    DriverNavigation.primaryStop(stops, optString("direction"), optString("phase"), bookedStageIds(), hasDoorAddress())
+
 internal fun JSONObject.departureInstant(): Instant? = runCatching { Instant.parse(optString("departureAt")) }.getOrNull()
 
 internal fun JSONObject.isActiveTransfer(): Boolean = optString("phase") in listOf("assigned", "accepted", "at_pickup", "in_progress")

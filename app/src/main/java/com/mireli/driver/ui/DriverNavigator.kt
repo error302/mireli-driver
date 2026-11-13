@@ -10,6 +10,7 @@ import android.location.LocationManager
 import android.os.Bundle
 import android.os.Looper
 import android.os.SystemClock
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -37,6 +38,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.mireli.driver.domain.DriverNavigation
 import com.mireli.driver.domain.DriverRoute
 import com.mireli.driver.domain.GeoPoint
+import com.mireli.driver.domain.NavPhase
 import com.mireli.driver.domain.NavigationStop
 import com.mireli.driver.domain.DriverDestination
 import com.mireli.driver.domain.SimulatedDrive
@@ -71,7 +73,8 @@ internal const val LOCATION_STALE_MS = 45_000L
 private const val OFF_ROUTE_METRES = 60.0
 
 /** Beyond this the car cannot honestly be drawn on a particular lane. */
-private const val LANE_ACCURACY_METRES = 20f
+internal const val GUIDANCE_ACCURACY_METRES = 35f
+internal const val ROUTE_ORIGIN_ACCURACY_METRES = 100f
 
 internal fun locationPermissionGranted(context: Context): Boolean =
     context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
@@ -182,27 +185,28 @@ internal fun DriverNavigationScreen(
     stop: NavigationStop?,
     onRequestRoute: RouteRequest?,
     onClose: () -> Unit,
-    nextTrain: String? = null,
-    trainStation: String? = null,
     simulated: SimulatedDrive? = null,
     onSearch: (suspend (String, GeoPoint?) -> List<DriverDestination>)? = null,
     onDestinationRoute: (suspend (GeoPoint, GeoPoint) -> DriverRoute)? = null,
-    satelliteToken: String? = null
+    satelliteToken: String? = null,
+    initialQuery: String? = null,
 ) {
     val context = LocalContext.current
+    BackHandler(onBack = onClose)
     val livePosition = rememberDriverPosition()
     val position = if (simulated != null) rememberSimulatedPosition(simulated) else livePosition
     var routeState by remember { mutableStateOf<DriverRoute?>(null) }
     var routeError by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
     var lastRequest by remember { mutableLongStateOf(0L) }
+    var routeAttempt by remember { mutableIntStateOf(0) }
     var permissionAsked by rememberSaveable { mutableStateOf(false) }
     var manualFallback by remember { mutableStateOf(false) }
     var expanded by rememberSaveable { mutableStateOf(false) }
     var offRouteSamples by remember { mutableIntStateOf(0) }
     val focus = LocalFocusManager.current
     val uriHandler = LocalUriHandler.current
-    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var searchQuery by rememberSaveable(initialQuery) { mutableStateOf(initialQuery.orEmpty()) }
     var searchResults by remember { mutableStateOf<List<DriverDestination>?>(null) }
     var searching by remember { mutableStateOf(false) }
     var searchError by remember { mutableStateOf<String?>(null) }
@@ -227,22 +231,23 @@ internal fun DriverNavigationScreen(
     LaunchedEffect(simulated) { if (simulated == null) routeState = null }
 
     val current = position.point
-    val lateralError = route?.let { r -> current?.let { offRouteMetres(r, it) } }
-    // Count off-route *fixes*, not distinct error values. Keying this on the error value meant a
-    // steady lateral error (the same off-route position repeated) counted once and never reached
-    // the two-sample threshold, so the banner never appeared.
-    LaunchedEffect(route, current?.latitude, current?.longitude) {
-        val error = route?.let { r -> current?.let { offRouteMetres(r, it) } }
-        offRouteSamples = if (route != null && (error ?: 0.0) > OFF_ROUTE_METRES) offRouteSamples + 1 else 0
+    val accuracy = position.accuracy
+    val usableGuidanceFix = position.live && accuracy != null && accuracy <= GUIDANCE_ACCURACY_METRES
+    val usableRouteOrigin = position.live && accuracy != null && accuracy <= ROUTE_ORIGIN_ACCURACY_METRES
+    val lateralError = route?.let { active -> current?.let { offRouteMetres(active, it) } }
+    val confidentlyOffRoute = usableGuidanceFix && (lateralError ?: 0.0) > OFF_ROUTE_METRES + (accuracy ?: 0f)
+    LaunchedEffect(route, position.fix, confidentlyOffRoute) {
+        offRouteSamples = if (route != null && confidentlyOffRoute) offRouteSamples + 1 else 0
     }
+    val offRoute = confidentlyOffRoute && offRouteSamples >= 2
 
-    LaunchedEffect(tripId, destination, current, position.live, simulated, onRequestRoute, onDestinationRoute) {
+    LaunchedEffect(tripId, destination, current, usableRouteOrigin, offRoute, routeAttempt, simulated) {
         val point = current ?: return@LaunchedEffect
         val target = destination ?: return@LaunchedEffect
-        if (simulated != null || loading || !position.live) return@LaunchedEffect
+        if (simulated != null || loading || !usableRouteOrigin) return@LaunchedEffect
         val now = SystemClock.elapsedRealtime()
         if (lastRequest > 0 && now - lastRequest < 25_000L) return@LaunchedEffect
-        if (routeState != null && (lateralError ?: 0.0) <= OFF_ROUTE_METRES) return@LaunchedEffect
+        if (routeState != null && !offRoute && lastRequest != 0L) return@LaunchedEffect
         val request = onRequestRoute
         if (stop != null && request != null) {
             loading = true
@@ -273,7 +278,7 @@ internal fun DriverNavigationScreen(
         }
     }
 
-    val nearest = route?.let { r -> current?.let { nearestRoutePointIndex(r, it) } }
+    val nearest = route?.let { r -> current?.takeIf { usableGuidanceFix }?.let { nearestRoutePointIndex(r, it) } }
     val maneuver = nearest?.let { index -> route?.maneuvers?.firstOrNull { it.endShapeIndex > index } ?: route?.maneuvers?.lastOrNull() }
     val maneuverDistance = route?.let { r -> current?.let { p ->
         maneuver?.let { step -> r.geometry.getOrNull(step.endShapeIndex)?.let { distanceMeters(p, it).toInt() } }
@@ -295,14 +300,15 @@ internal fun DriverNavigationScreen(
         searchJob = scope.launch {
             searching = true
             searchError = null
+            searchResults = null
             try {
                 val results = search(query, current?.takeIf { position.live })
                 searchResults = results.takeIf { it.isNotEmpty() }
-                if (results.isEmpty()) searchError = "No place matched. Try a road or landmark name."
+                if (results.isEmpty()) searchError = "No match in Mireli. Try a nearby landmark or search in Google Maps."
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                searchError = error.message?.take(160) ?: "Search is unavailable."
+                searchError = "Mireli search is unavailable. Try again or search in Google Maps."
             } finally {
                 searching = false
             }
@@ -326,23 +332,30 @@ internal fun DriverNavigationScreen(
     }
     val atStop = destination != null && current != null && position.accuracy != null && position.live &&
         distanceMeters(current, GeoPoint(destination.latitude, destination.longitude)) + position.accuracy!! < 35.0
-    val offRoute = offRouteSamples >= 2
-    val accuracy = position.accuracy
-    val laneHonest = accuracy != null && accuracy <= LANE_ACCURACY_METRES
-    val guidanceError = routeError ?: if (stop != null && onRequestRoute == null && simulated == null) {
-        "Open Google Maps for directions to this stop."
-    } else null
+    val guidanceError = routeError ?: when {
+        simulated != null || destination == null -> null
+        stop != null && onRequestRoute == null -> "Open Google Maps for directions to this stop."
+        stop == null && onDestinationRoute == null -> "Open Google Maps for directions to this pin."
+        else -> null
+    }
     // One state machine decides every banner and status string on this screen.
     val phase = com.mireli.driver.domain.navigationPhase(
-        atStop = atStop, hasFix = position.live, offRoute = offRoute,
+        atStop = atStop, hasFix = usableRouteOrigin || route != null, offRoute = offRoute,
         loading = loading, routeError = guidanceError, hasRoute = route != null
     )
+    val weakGuidance = !usableGuidanceFix && route != null
 
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         NavigationMap(
             target = mapTarget, location = current, fix = position.fix, route = route,
             modifier = Modifier.fillMaxSize(), interactive = true, follow = stop != null || simulated != null,
-            satelliteToken = satelliteToken
+            satelliteToken = satelliteToken,
+            onLongPress = if (stop == null && simulated == null) { point ->
+                focus.clearFocus()
+                clearPreview()
+                previewStop = NavigationStop("dropped-pin", "Dropped pin", point.latitude, point.longitude)
+                searchQuery = "Dropped pin"
+            } else null
         )
 
         Column(
@@ -422,8 +435,23 @@ internal fun DriverNavigationScreen(
                         }
                     }
                 }
+                if (previewStop == null && !searching && (searchQuery.isBlank() || searchError != null)) {
+                    Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.surface) {
+                        Text("Touch and hold the map to drop a pin", Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
                 if (searching) LinearProgressIndicator(Modifier.fillMaxWidth())
-                searchError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                searchError?.let { error ->
+                    Surface(shape = RoundedCornerShape(MireliDesign.Radius.card), color = MaterialTheme.colorScheme.surface) {
+                        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+                            Text(error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
+                            DriverNavigation.addressSearch(searchQuery)?.let { url ->
+                                TextButton(onClick = { manualFallback = !openMaps(context, url) }) { Text("Search in Google Maps") }
+                            }
+                        }
+                    }
+                }
                 searchResults?.let { results ->
                     Surface(shape = RoundedCornerShape(MireliDesign.Radius.card), color = MaterialTheme.colorScheme.surface, shadowElevation = 4.dp) {
                         Column {
@@ -471,26 +499,26 @@ internal fun DriverNavigationScreen(
                         )
                         Column(Modifier.weight(1f)) {
                             Text(
-                                when (phase) {
-                                    com.mireli.driver.domain.NavPhase.OFF_ROUTE -> "Off route · finding a way back"
-                                    com.mireli.driver.domain.NavPhase.ROUTING -> "Working out your route…"
-                                    com.mireli.driver.domain.NavPhase.NO_FIX -> "Waiting for a GPS fix…"
-                                    com.mireli.driver.domain.NavPhase.FAILED -> guidanceError ?: "Directions are unavailable right now."
-                                    com.mireli.driver.domain.NavPhase.ARRIVED -> "Arrived at ${destination.name}"
-                                    com.mireli.driver.domain.NavPhase.GUIDING ->
-                                        maneuver?.let { "${metres(maneuverDistance ?: it.distanceMeters)} · ${it.instruction}" }
-                                            ?: "Head to ${destination.name}"
+                                when {
+                                    weakGuidance -> "GPS signal is weak"
+                                    phase == NavPhase.OFF_ROUTE -> "Off route · finding a way back"
+                                    phase == NavPhase.ROUTING -> "Working out your route…"
+                                    phase == NavPhase.NO_FIX -> "Waiting for a GPS fix…"
+                                    phase == NavPhase.FAILED -> "Directions unavailable"
+                                    else -> maneuver?.let { "${metres(maneuverDistance ?: it.distanceMeters)} · ${it.instruction}" }
+                                        ?: "Head to ${destination.name}"
                                 },
                                 style = MaterialTheme.typography.titleSmall,
                                 color = if (offRoute) MaterialTheme.colorScheme.onErrorContainer else Color.White,
                                 maxLines = 2
                             )
                             Text(
-                                routeError ?: when {
-                                    !position.live -> "Waiting for a GPS fix · guidance pauses, the map does not"
+                                when {
+                                    weakGuidance -> "Follow the highlighted route and road signs."
+                                    guidanceError != null -> guidanceError
+                                    !usableRouteOrigin -> "The destination is pinned. Open Google Maps for directions."
                                     loading -> "Contacting the routing service"
-                                    laneHonest -> "Follows the mapped road network"
-                                    else -> "GPS is ±${accuracy?.toInt()} m, so your lane cannot be pinpointed"
+                                    else -> destination.name
                                 },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = (if (offRoute) MaterialTheme.colorScheme.onErrorContainer else Color.White).copy(alpha = .85f),
@@ -511,15 +539,13 @@ internal fun DriverNavigationScreen(
         NavigationSheet(
             modifier = Modifier.align(Alignment.BottomCenter),
             stop = stop ?: previewStop,
-            distance = remainingDistance,
-            seconds = remainingTime,
+            distance = remainingDistance?.takeUnless { offRoute },
+            seconds = remainingTime?.takeUnless { offRoute },
             accuracy = accuracy,
             speedKmh = position.speedKmh,
             ageSeconds = position.ageSeconds,
             live = position.live,
             loading = loading,
-            nextTrain = nextTrain,
-            trainStation = trainStation,
             expanded = expanded,
             onToggle = { expanded = !expanded },
             onEnd = onClose,
@@ -528,7 +554,10 @@ internal fun DriverNavigationScreen(
                 val target = mapTarget!!
                 manualFallback = !DriverNavigation.directions(target).let { url -> url != null && openMaps(context, url) }
             },
-            manualFallback = manualFallback
+            manualFallback = manualFallback,
+            onRetry = if (routeError != null && usableRouteOrigin && !loading) {
+                { lastRequest = 0; routeAttempt++ }
+            } else null
         )
 
         if (!granted && permissionAsked && simulated == null) {
@@ -563,14 +592,13 @@ private fun NavigationSheet(
     ageSeconds: Long?,
     live: Boolean,
     loading: Boolean,
-    nextTrain: String?,
-    trainStation: String?,
     expanded: Boolean,
     onToggle: () -> Unit,
     onEnd: () -> Unit,
     canOpenMaps: Boolean,
     onOpenMaps: () -> Unit,
-    manualFallback: Boolean
+    manualFallback: Boolean,
+    onRetry: (() -> Unit)?,
 ) {
     Surface(
         modifier.fillMaxWidth().animateContentSize(),
@@ -593,6 +621,7 @@ private fun NavigationSheet(
                             distance != null && seconds != null -> "${metres(distance)} · ${minutesLabel(seconds)} · arrive ${clock(seconds)} EAT"
                             loading -> "Working out the route…"
                             stop == null -> "Live position, updated every few seconds"
+                            !live || accuracy == null || accuracy > GUIDANCE_ACCURACY_METRES -> "Waiting for a more accurate location"
                             else -> "Distance and time appear once the route loads"
                         },
                         style = MaterialTheme.typography.bodyMedium,
@@ -616,26 +645,13 @@ private fun NavigationSheet(
                     },
                     live && distance != null
                 )
-                if (nextTrain != null) {
-                    Surface(shape = RoundedCornerShape(MireliDesign.Radius.chip), color = MaterialTheme.colorScheme.secondaryContainer) {
-                        Row(
-                            Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(5.dp)
-                        ) {
-                            Icon(MireliIcons.Train, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
-                            Text(
-                                (trainStation?.let { "$it train " } ?: "Next train ") + nextTrain,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer
-                            )
-                        }
-                    }
-                }
             }
 
             if (canOpenMaps) {
-                TextButton(onClick = onOpenMaps, modifier = Modifier.align(Alignment.End)) { Text("Open in Google Maps") }
+                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    if (onRetry != null) TextButton(onClick = onRetry) { Text("Retry route") }
+                    TextButton(onClick = onOpenMaps) { Text("Open in Google Maps") }
+                }
             }
             if (manualFallback) Text("Google Maps could not open.", color = MaterialTheme.colorScheme.error)
             AnimatedVisibility(expanded) {
@@ -643,13 +659,6 @@ private fun NavigationSheet(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         speedKmh?.let { LiveChip("%.0f km/h".format(it), live) }
                         ageSeconds?.let { LiveChip("updated ${it.coerceAtLeast(0)}s ago", live) }
-                        if (accuracy != null && accuracy > LANE_ACCURACY_METRES) {
-                            Text(
-                                "Accuracy is ±${accuracy.toInt()} m: the car is shown where the fix is, not on a guessed lane.",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
                     }
                     TextButton(onClick = onEnd) { Text("End navigation") }
                 }

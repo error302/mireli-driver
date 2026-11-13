@@ -3,6 +3,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.BackHandler
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
@@ -50,6 +51,8 @@ private fun policyLink(raw: String): String? = runCatching {
 @Composable fun DriverServicesScreen(onClose:(()->Unit)?=null,vm:DriverServicesViewModel=viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
     val starting by vm.startupLoading.collectAsStateWithLifecycle()
+    val schedule by vm.trainSchedule.collectAsStateWithLifecycle()
+    val profilePhoto by vm.profilePhoto.collectAsStateWithLifecycle()
     var entry by rememberSaveable { mutableStateOf(DriverEntry.Welcome) }
     var email by rememberSaveable {mutableStateOf("")};var code by remember {mutableStateOf("")}
     var section by rememberSaveable {mutableIntStateOf(4)};var accepted by rememberSaveable {mutableStateOf(false)}
@@ -68,6 +71,14 @@ private fun policyLink(raw: String): String? = runCatching {
                 }
             }
         }
+    }
+    LaunchedEffect(state.signedIn, section, lifecycle) {
+        if (state.signedIn && section == 4) {
+            lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) { vm.refreshTimetable() }
+        }
+    }
+    LaunchedEffect(state.signedIn, section) {
+        if (state.signedIn && section == 0) vm.loadProfilePhoto()
     }
     var clock by remember {mutableLongStateOf(System.currentTimeMillis())}
     LaunchedEffect(state.challengeId,state.resendAt){code="";while(state.challengeId!=null&&clock<state.resendAt){clock=System.currentTimeMillis();delay(1000)};clock=System.currentTimeMillis()}
@@ -104,6 +115,9 @@ private fun policyLink(raw: String): String? = runCatching {
     }
     LaunchedEffect(state.supportSent){if(state.supportSent>0){supportMessage="";focus.clearFocus();keyboard?.hide()}}
     val picker=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){uri->val type=selectedType;selectedType=null;if(uri!=null&&type!=null)vm.upload(type,selectedExpiry,uri)}
+    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        uri?.let(vm::uploadProfilePhoto)
+    }
     val onboarding=state.onboarding;val app=onboarding?.optJSONObject("application")
     val privacyLink = policyLink(onboarding?.optString("privacyUrl").orEmpty())
     val termsLink = policyLink(onboarding?.optString("termsUrl").orEmpty())
@@ -202,7 +216,7 @@ private fun policyLink(raw: String): String? = runCatching {
             if(section==0)item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.weight(1f)) { DeparturePageTitle("Driver account") }
-                    IconButton(onClick = vm::refresh, enabled = !state.loading) {
+                    IconButton(onClick = { vm.refresh(); vm.loadProfilePhoto() }, enabled = !state.loading) {
                         Icon(MireliIcons.Refresh, "Refresh account", tint = MaterialTheme.colorScheme.secondary)
                     }
                 }
@@ -264,7 +278,8 @@ private fun policyLink(raw: String): String? = runCatching {
                             activeNavigation = activeTrip?.let { trip -> {
                                 Surface(shape=RoundedCornerShape(MireliDesign.Radius.card),color=MaterialTheme.colorScheme.surface) {
                                     Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
-                                        TripNavigation(trip,onRequestRoute=routeRequest)
+                                        TripNavigation(trip, onRequestRoute = routeRequest,
+                                            onStartNavigation = { stop -> navTarget = NavTarget(trip.optString("id"), stop) })
                                         OutlinedButton(onClick={highlightedTripId=trip.optString("id");tripHistory=false;section=3},modifier=Modifier.fillMaxWidth()){Text("Open journey & passengers")}
                                     }
                                 }
@@ -280,7 +295,9 @@ private fun policyLink(raw: String): String? = runCatching {
                                 val paid = totals.filter { it.getString("status") == "completed" }.sumOf { it.getLong("netMinor") }
                                 if (hideBalance) "Paid · balance hidden" else "${money(paid)} paid"
                             },
-                            renewalNote = renewalNote(state.eligibility)
+                            renewalNote = renewalNote(state.eligibility),
+                            schedule = schedule,
+                            onRefreshTimetable = vm::refreshTimetable
                         )
                     }
                 }else if(section==0&&onboarding!=null&&app!=null) {
@@ -288,39 +305,54 @@ private fun policyLink(raw: String): String? = runCatching {
                     val verified = state.eligibility?.optBoolean("verified") == true
                     val canEdit = !state.loading && applicationStatus in listOf("draft", "changes_requested", "approved")
                     val documentLimit = onboarding.getInt("maxDocumentBytes")
-                    item {DriverOverviewSurface {
-                        val name = onboarding.getJSONObject("profile").optString("fullName")
-                            .takeUnless { it.isBlank() || it == "New applicant" }
-                        DriverIdentity(name, verified, prominent = true)
-                        DepartureValueRow("Application", if (applicationStatus == "submitted") "In review" else applicationStatus.readableStatus(),
-                            confirmed = applicationStatus == "approved")
-                        DepartureNote(if(state.eligibility?.optBoolean("eligible")==true)"Eligible for new assignments" else "Approval required before new assignments")
-                        renewalNote(state.eligibility)?.let { DepartureNote(it) }
-                        app.optString("reviewReason").takeIf{it.isNotBlank()&&it!="null"}?.let{Text(it)}
-                        if (applicationStatus == "approved") {
-                            DepartureNote("Mireli reviews replacement documents before they take effect.")
-                        }
-                    }}
-                    item {
-                        DepartureSection("Driver documents")
-                        Spacer(Modifier.height(6.dp))
-                        DepartureNote("PDF, JPG or PNG, up to ${documentLimit / (1024 * 1024)} MB each. Use a clear, complete copy of the original. Mireli reviews it privately.")
-                    }
+                    val profile = onboarding.getJSONObject("profile")
                     val documents = app.getJSONArray("documents").objects().associateBy { it.getString("type") }
                     val graceUntil = state.eligibility?.opt("graceUntil") as? String
-                    val requirements = onboarding.getJSONArray("requirements").objects().sortedByDescending { it.getBoolean("required") }
-                    itemsIndexed(requirements, key = { _, requirement -> requirement.getString("id") }) { index, requirement ->
-                        val id = requirement.getString("id")
-                        DriverDocumentRow(requirement, documents[id], graceUntil, canEdit, state.documentUpload?.takeIf { it.type == id },
-                            Modifier.staggerIn(index.coerceAtMost(5))) { expiry ->
-                            selectedType = id
-                            selectedExpiry = expiry
-                            picker.launch(arrayOf("application/pdf", "image/jpeg", "image/png"))
+                    val requirements = onboarding.getJSONArray("requirements").objects()
+                    val required = requirements.filter { it.getBoolean("required") }
+                    val onFile = required.count {
+                        val evidence = documents[it.getString("id")]
+                        evidence?.optString("state") in setOf("pending_review", "approved")
+                    }
+                    item {
+                        MireliDriverCard(profile, applicationStatus, verified,
+                            state.eligibility?.optBoolean("eligible") == true, profilePhoto, !state.loading,
+                            onPickPhoto = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                            onRemovePhoto = vm::removeProfilePhoto)
+                        renewalNote(state.eligibility)?.let { DepartureNote(it) }
+                        (app.opt("reviewReason") as? String)?.takeIf { it.isNotBlank() }?.let { DepartureNote(it) }
+                    }
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            DepartureSection("Verification checklist")
+                            if (required.isNotEmpty()) {
+                                Text("$onFile of ${required.size} required documents on file",
+                                    style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.secondary)
+                                LinearProgressIndicator(progress = { onFile.toFloat() / required.size },
+                                    modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.primary)
+                            }
+                            DepartureNote("Upload a clear PDF, JPG or PNG of the original, up to ${documentLimit / (1024 * 1024)} MB. Mireli reviews each file privately.")
+                        }
+                    }
+                    val sections = requirements.groupBy(::documentSection)
+                    for (group in listOf("Driver credentials", "Vehicle documents", "Optional documents")) {
+                        val rows = sections[group] ?: continue
+                        item(key = group) {
+                            Text(group, style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.secondary, modifier = Modifier.padding(top = 8.dp))
+                        }
+                        itemsIndexed(rows, key = { _, requirement -> requirement.getString("id") }) { index, requirement ->
+                            val id = requirement.getString("id")
+                            DriverDocumentRow(requirement, documents[id], graceUntil, canEdit, state.documentUpload?.takeIf { it.type == id },
+                                Modifier.staggerIn(index.coerceAtMost(5)), showRequirement = false) { expiry ->
+                                selectedType = id
+                                selectedExpiry = expiry
+                                picker.launch(arrayOf("application/pdf", "image/jpeg", "image/png"))
+                            }
                         }
                     }
                     item {
                         HorizontalDivider()
-                        val profile = onboarding.getJSONObject("profile")
                         val profileMissing = profile.optString("fullName") == "New applicant" ||
                             profile.optString("plate").isBlank() || (profile.opt("phone") as? String).isNullOrBlank() ||
                             app.optString("licenceClass").isBlank() || profile.optString("cabType").isBlank()
@@ -423,7 +455,11 @@ private fun policyLink(raw: String): String? = runCatching {
                         LiveTripCard(trip,state.loading||state.pendingTripAction||!state.tripDataCurrent,
                             state.eligibility?.optBoolean("eligible")==true,vm::tripCommand,routeRequest,
                             Modifier.staggerIn(index.coerceAtMost(5)), openInitially = trip.optString("id") == highlightedTripId ||
-                                (!tripHistory && index == 0))
+                                (!tripHistory && index == 0),
+                            onStartNavigation = { stop -> navTarget = NavTarget(trip.optString("id"), stop) },
+                            onSearchAddress = if (state.destinationSearchOpen) { address ->
+                                navTarget = NavTarget(null, null, address)
+                            } else null)
                     }
                     if(visibleTrips.isEmpty())item {Column(Modifier.padding(vertical=20.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
                         Text(when {
@@ -477,24 +513,18 @@ private fun policyLink(raw: String): String? = runCatching {
         }
     }
     navTarget?.let{ target->
-        // The sheet carries the next scheduled SGR departure whenever dispatch has one for this
-        // driver. It is a scheduled time from the assignment, never a live train position.
-        val clock = rememberNow()
-        val nextDeparture = state.trips?.optJSONArray("trips")?.objects().orEmpty()
-            .mapNotNull { trip -> trip.departureInstant()?.takeIf { it.isAfter(clock) } }
-            .minOrNull()
         DriverNavigationScreen(
             tripId=target.tripId, stop=target.stop, onRequestRoute=routeRequest, onClose={navTarget=null},
-            nextTrain = nextDeparture?.takeIf { target.tripId != null }?.let { countdown(clock, it) },
             onSearch = if (state.destinationSearchOpen) vm::searchDestinations else null,
             onDestinationRoute = if (state.destinationSearchOpen) vm::destinationRoute else null,
-            satelliteToken = if (state.satelliteOpen) vm.satelliteSessionToken() else null
+            satelliteToken = if (state.satelliteOpen) vm.satelliteSessionToken() else null,
+            initialQuery = target.query
         )
     }
     }
 }
 
-private data class NavTarget(val tripId:String?,val stop:NavigationStop?)
+private data class NavTarget(val tripId:String?,val stop:NavigationStop?,val query: String? = null)
 
 private fun renewalNote(eligibility: JSONObject?): String? {
     val grace = eligibility?.opt("graceUntil") as? String

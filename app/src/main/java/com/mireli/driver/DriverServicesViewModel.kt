@@ -1,6 +1,7 @@
 package com.mireli.driver
 import android.app.Application
 import android.net.Uri
+import android.util.Base64
 import android.util.Patterns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -8,6 +9,7 @@ import com.mireli.driver.data.*
 import com.mireli.driver.domain.GeoPoint
 import com.mireli.driver.domain.DriverDestination
 import com.mireli.driver.domain.DriverRoute
+import com.mireli.driver.domain.SgrTimetable
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -20,6 +22,19 @@ data class DocumentUpload(val type: String, val uploading: Boolean = false, val 
 data class DriverServiceState(val loading:Boolean=true,val signedIn:Boolean=false,val challengeId:String?=null,
     val demoCode:String?=null,val challengeEmail:String?=null,val onboarding:JSONObject?=null,val earnings:JSONObject?=null,val support:JSONObject?=null,val supportSent:Int=0,val eligibility:JSONObject?=null,val trips:JSONObject?=null,val tripDataCurrent:Boolean=false,val pendingTripAction:Boolean=false,val emailSignInOpen:Boolean?=null,val registrationOpen:Boolean?=null,val navigationOpen:Boolean=false,val serviceMessage:String?=null,val supportEmail:String=DEFAULT_SUPPORT_EMAIL,val resendAt:Long=0,val error:String?=null,
     val documentUpload: DocumentUpload? = null, val destinationSearchOpen: Boolean = false, val satelliteOpen: Boolean = false)
+internal data class TrainSchedule(
+    val services: List<SgrTimetable.Service>? = null,
+    val loading: Boolean = false,
+    val failed: Boolean = false,
+)
+
+internal data class DriverPhoto(
+    val jpeg: ByteArray? = null,
+    val loading: Boolean = false,
+    val message: String? = null,
+    val failed: Boolean = false,
+)
+
 class DriverServicesViewModel(application:Application):AndroidViewModel(application) {
     private val api=DriverApi()
     private val sessions=DriverSessionStore(application)
@@ -31,6 +46,63 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
     private val starting = MutableStateFlow(true)
     val startupLoading = starting.asStateFlow()
     val state=mutable.asStateFlow()
+    private val timetable = MutableStateFlow(TrainSchedule())
+    internal val trainSchedule = timetable.asStateFlow()
+    private val photo = MutableStateFlow(DriverPhoto())
+    internal val profilePhoto = photo.asStateFlow()
+    private var timetableJob: Job? = null
+
+    fun refreshTimetable() {
+        if (timetableJob?.isActive == true) return
+        timetableJob = viewModelScope.launch {
+            timetable.value = timetable.value.copy(loading = true, failed = false)
+            try {
+                timetable.value = TrainSchedule(api.timetable())
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                timetable.value = timetable.value.copy(loading = false, failed = true)
+            }
+        }
+    }
+
+    fun loadProfilePhoto() = changePhoto()
+
+    fun uploadProfilePhoto(uri: Uri) = changePhoto("PUT", uri)
+
+    fun removeProfilePhoto() = changePhoto("DELETE")
+
+    private fun changePhoto(method: String = "GET", uri: Uri? = null) {
+        val activeSession = session ?: return
+        if (photo.value.loading || (method != "GET" && mutable.value.loading)) return
+        photo.value = photo.value.copy(loading = true, message = null)
+        viewModelScope.launch {
+            try {
+                val bytes = uri?.let { prepareDriverProfilePhoto(getApplication(), it) }
+                if (session !== activeSession) return@launch
+                val response = api.request("/profile-photo", method, activeSession.token, bytes = bytes,
+                    headers = if (bytes != null) mapOf("Content-Type" to "image/jpeg") else emptyMap())
+                val jpeg = (response.get("photo") as? String)?.let { Base64.decode(it, Base64.DEFAULT) }
+                if (session === activeSession) photo.value = DriverPhoto(jpeg, message = when (method) {
+                    "PUT" -> "Photo saved"
+                    "DELETE" -> "Photo removed"
+                    else -> null
+                })
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (session === activeSession) {
+                    val message = if (error is InvalidDriverPhoto) error.message else when (method) {
+                        "PUT" -> "Photo could not be saved. Try again."
+                        "DELETE" -> "Photo could not be removed. Try again."
+                        else -> "Photo could not be loaded. Refresh to try again."
+                    }
+                    photo.value = photo.value.copy(loading = false, message = message, failed = true)
+                }
+            }
+        }
+    }
+
     init {viewModelScope.launch {
         session=withContext(Dispatchers.IO){sessions.load()}
         mutable.value=DriverServiceState(signedIn=session!=null)
@@ -338,6 +410,7 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
     private suspend fun clearSession(message: String?) {
         withContext(Dispatchers.IO) { sessions.clear() }
         session = null
+        photo.value = DriverPhoto()
         driverId = null
         supportRequest = null
         val previous = mutable.value

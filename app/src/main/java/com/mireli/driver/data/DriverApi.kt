@@ -1,6 +1,8 @@
 package com.mireli.driver.data
 
 import com.mireli.driver.BuildConfig
+import com.mireli.driver.domain.SgrTimetable
+import java.time.LocalTime
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -9,11 +11,42 @@ import java.net.URI
 import java.io.ByteArrayOutputStream
 
 class DriverApi {
-    suspend fun request(path:String,method:String="GET",token:String?=null,json:JSONObject?=null,bytes:ByteArray?=null,headers:Map<String,String> = emptyMap()):JSONObject = withContext(Dispatchers.IO) {
+    suspend fun request(path:String,method:String="GET",token:String?=null,json:JSONObject?=null,bytes:ByteArray?=null,headers:Map<String,String> = emptyMap()):JSONObject {
+        require(path.startsWith("/") && !path.contains(".."))
+        return requestJson("/api/v1/driver$path", method, token, json, bytes, headers)
+    }
+
+    internal suspend fun timetable(): List<SgrTimetable.Service> {
+        val trains = requestJson("/api/trains").getJSONArray("trains")
+        return (0 until trains.length()).mapNotNull { index ->
+            val train = trains.getJSONObject(index)
+            val outbound = train.getString("originCode") == "MTM" && train.getString("destCode") == "NTM"
+            val inbound = train.getString("originCode") == "NTM" && train.getString("destCode") == "MTM"
+            if (!outbound && !inbound) return@mapNotNull null
+            val days = train.getJSONArray("serviceDays")
+            val clock = LocalTime.parse(train.getString(if (outbound) "originTime" else "destTime"))
+            val offset = if (outbound) 0 else train.getInt("destDayOffset")
+            require(offset in 0..1)
+            val serviceDays = (0 until days.length()).map { days.getInt(it) }.toSet()
+            require(serviceDays.isNotEmpty() && serviceDays.all { it in 0..6 })
+            SgrTimetable.Service(train.getString("name"),
+                if (outbound) SgrTimetable.Movement.Departure else SgrTimetable.Movement.Arrival,
+                clock, offset.toLong(), serviceDays)
+        }
+    }
+
+    private suspend fun requestJson(
+        path: String,
+        method: String = "GET",
+        token: String? = null,
+        json: JSONObject? = null,
+        bytes: ByteArray? = null,
+        headers: Map<String, String> = emptyMap(),
+    ): JSONObject = withContext(Dispatchers.IO) {
         require(path.startsWith("/") && !path.contains(".."))
         val base=URI(BuildConfig.DRIVER_SERVICE_URL)
         require(base.scheme=="https" || (BuildConfig.DRIVER_SERVICE_TEST && base.scheme=="http" && base.host=="10.0.2.2"))
-        val connection=base.resolve("/api/v1/driver$path").toURL().openConnection() as HttpURLConnection
+        val connection=base.resolve(path).toURL().openConnection() as HttpURLConnection
         try {
             connection.requestMethod=method;connection.instanceFollowRedirects=false;connection.connectTimeout=10000;connection.readTimeout=20000
             connection.setRequestProperty("Accept","application/json")

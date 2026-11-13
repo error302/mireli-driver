@@ -24,6 +24,7 @@ internal fun DriverDocumentRow(
     canEdit: Boolean,
     upload: DocumentUpload?,
     modifier: Modifier = Modifier,
+    showRequirement: Boolean = true,
     onUpload: (String) -> Unit
 ) {
     val title = requirement.getString("title")
@@ -47,7 +48,8 @@ internal fun DriverDocumentRow(
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(title, style = MaterialTheme.typography.titleMedium)
-                Text("${if (requirement.getBoolean("required")) "Required" else "Optional"} · $status",
+                val requirementLabel = if (requirement.getBoolean("required")) "Required" else "Optional"
+                Text(if (showRequirement) "$requirementLabel · $status" else status,
                     style = MaterialTheme.typography.bodySmall,
                     color = if (approved) colors.primary else colors.onSurfaceVariant)
             }

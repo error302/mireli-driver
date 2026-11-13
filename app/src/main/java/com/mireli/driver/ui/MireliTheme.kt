@@ -20,7 +20,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -92,20 +96,46 @@ private val DarkColors=darkColorScheme(
     surfaceContainer=Color(0xFF101820),surfaceContainerHigh=Color(0xFF16222A),surfaceContainerHighest=Color(0xFF1E2C35),
     outline=Color(0xFF7A8E97),outlineVariant=Color(0xFF2C3F49))
 
-private val MireliTypography=Typography(
-    displaySmall=TextStyle(fontSize=36.sp,lineHeight=42.sp,fontWeight=FontWeight.Bold,letterSpacing=(-1.2).sp,fontFeatureSettings=MireliDesign.NumberFeatures),
-    headlineLarge=TextStyle(fontSize=34.sp,lineHeight=40.sp,fontWeight=FontWeight.Bold,letterSpacing=(-1).sp,fontFeatureSettings=MireliDesign.NumberFeatures),
-    headlineMedium=TextStyle(fontSize=28.sp,lineHeight=34.sp,fontWeight=FontWeight.Bold,letterSpacing=(-.6).sp,fontFeatureSettings=MireliDesign.NumberFeatures),
-    headlineSmall=TextStyle(fontSize=24.sp,lineHeight=30.sp,fontWeight=FontWeight.SemiBold,letterSpacing=(-.4).sp),
-    titleLarge=TextStyle(fontSize=20.sp,lineHeight=26.sp,fontWeight=FontWeight.SemiBold),
-    titleMedium=TextStyle(fontSize=16.sp,lineHeight=22.sp,fontWeight=FontWeight.SemiBold),
-    titleSmall=TextStyle(fontSize=14.sp,lineHeight=20.sp,fontWeight=FontWeight.Medium),
-    bodyLarge=TextStyle(fontSize=16.sp,lineHeight=24.sp),
-    bodyMedium=TextStyle(fontSize=14.sp,lineHeight=21.sp),
-    bodySmall=TextStyle(fontSize=12.sp,lineHeight=17.sp),
-    labelLarge=TextStyle(fontSize=14.sp,lineHeight=18.sp,fontWeight=FontWeight.SemiBold,fontFeatureSettings=MireliDesign.NumberFeatures),
-    labelMedium=TextStyle(fontSize=12.sp,lineHeight=16.sp,fontWeight=FontWeight.Medium,letterSpacing=(.2).sp,fontFeatureSettings=MireliDesign.NumberFeatures),
-    labelSmall=TextStyle(fontSize=11.sp,lineHeight=14.sp,fontWeight=FontWeight.Medium,letterSpacing=(.4).sp))
+@OptIn(ExperimentalTextApi::class)
+private val MireliFont = FontFamily(
+    listOf(FontWeight.Normal, FontWeight.Medium, FontWeight.SemiBold, FontWeight.Bold).map { weight ->
+        Font(R.font.inter_variable, weight = weight,
+            variationSettings = FontVariation.Settings(FontVariation.weight(weight.weight)))
+    }
+)
+
+private fun mireliType(
+    size: Int,
+    leading: Int,
+    weight: FontWeight = FontWeight.Normal,
+    tracking: Double = 0.0,
+    tabular: Boolean = false,
+) = TextStyle(
+    fontFamily = MireliFont,
+    fontWeight = weight,
+    fontSize = size.sp,
+    lineHeight = leading.sp,
+    letterSpacing = tracking.sp,
+    fontFeatureSettings = if (tabular) MireliDesign.NumberFeatures else null,
+)
+
+private val MireliTypography = Typography(
+    displayLarge = mireliType(52, 57, FontWeight.Bold, -2.2, tabular = true),
+    displayMedium = mireliType(44, 49, FontWeight.Bold, -1.8, tabular = true),
+    displaySmall = mireliType(38, 43, FontWeight.Bold, -1.5, tabular = true),
+    headlineLarge = mireliType(34, 39, FontWeight.Bold, -1.2),
+    headlineMedium = mireliType(28, 34, FontWeight.Bold, -0.9),
+    headlineSmall = mireliType(23, 29, FontWeight.SemiBold, -0.5),
+    titleLarge = mireliType(20, 25, FontWeight.SemiBold, -0.4),
+    titleMedium = mireliType(17, 22, FontWeight.SemiBold, -0.3),
+    titleSmall = mireliType(15, 20, FontWeight.SemiBold, -0.1),
+    bodyLarge = mireliType(17, 24, tracking = -0.2),
+    bodyMedium = mireliType(15, 21, tracking = -0.1),
+    bodySmall = mireliType(13, 18),
+    labelLarge = mireliType(15, 20, FontWeight.SemiBold, -0.1, tabular = true),
+    labelMedium = mireliType(12, 17, FontWeight.Medium, tabular = true),
+    labelSmall = mireliType(11, 15, FontWeight.Medium, tabular = true),
+)
 
 private val MireliShapes=Shapes(
     extraSmall=RoundedCornerShape(8.dp),small=RoundedCornerShape(MireliDesign.Radius.tile),

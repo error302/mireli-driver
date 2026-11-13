@@ -71,8 +71,6 @@ fun SimulatedDriveScreen(
             stop = destination,
             onRequestRoute = null,
             onClose = onClose,
-            nextTrain = "in 12 min",
-            trainStation = "Terminus",
             simulated = drive
         )
     }

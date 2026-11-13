@@ -118,7 +118,8 @@ internal fun openMaps(context:Context,url:String):Boolean {
         .getOrElse{runCatching{context.startActivity(intent);true}.getOrDefault(false)}
 }
 
-@Composable fun TripNavigation(trip:JSONObject,onNavigate:((String)->Boolean)?=null,onRequestRoute:RouteRequest?=null) {
+@Composable fun TripNavigation(trip:JSONObject,onNavigate:((String)->Boolean)?=null,onRequestRoute:RouteRequest?=null,
+    onStartNavigation: ((NavigationStop) -> Unit)? = null) {
     val context=LocalContext.current
     val lifecycleOwner=LocalLifecycleOwner.current
     val tripId=trip.getString("id")
@@ -154,8 +155,9 @@ internal fun openMaps(context:Context,url:String):Boolean {
     }
     val navigate=onNavigate?:{url:String->openMaps(context,url)}
     val stops = trip.navigationStops()
-    val direction=trip.optString("direction");val phase=trip.optString("phase")
-    val defaultTarget = DriverNavigation.primaryStop(stops, direction, phase, trip.bookedStageIds(), trip.hasDoorAddress())
+    val phase = trip.optString("phase")
+    val direction = trip.optString("direction")
+    val defaultTarget = trip.primaryNavigationStop(stops)
     var selectedStopId by rememberSaveable(tripId, phase, defaultTarget?.id){mutableStateOf(defaultTarget?.id)}
     LaunchedEffect(tripId,selectedStopId) {
         route = null; routeError = null; offRouteSamples = 0; lastRouteRequest = 0L
@@ -220,12 +222,14 @@ internal fun openMaps(context:Context,url:String):Boolean {
         }
     }
 
-    LaunchedEffect(navigating,currentLocation,route,target?.id,routeLoading,routeRequestRevision) {
+    val accuracy = locationFix?.takeIf { it.hasAccuracy() }?.accuracy
+    val usableGuidanceFix = currentLocation != null && accuracy != null && accuracy <= GUIDANCE_ACCURACY_METRES
+    LaunchedEffect(navigating,locationFix,currentLocation,route,target?.id,routeRequestRevision) {
         val point=currentLocation;val stop=target
-        if(!navigating||point==null||stop==null||routeLoading)return@LaunchedEffect
+        if(!navigating||point==null||stop==null||routeLoading||accuracy==null||accuracy>ROUTE_ORIGIN_ACCURACY_METRES)return@LaunchedEffect
         val currentRoute=route
         val offRoute=currentRoute?.let{distanceMeters(point,it.geometry[nearestRoutePointIndex(it,point)])}?:Double.MAX_VALUE
-        offRouteSamples=if(currentRoute!=null&&offRoute>120.0)offRouteSamples+1 else 0
+        offRouteSamples=if(currentRoute!=null && usableGuidanceFix && offRoute>120.0+accuracy)offRouteSamples+1 else 0
         val shouldRequest=currentRoute==null||offRouteSamples>=3
         val now=SystemClock.elapsedRealtime()
         if(shouldRequest&&(lastRouteRequest==0L||now-lastRouteRequest>=30000L)) {
@@ -246,7 +250,7 @@ internal fun openMaps(context:Context,url:String):Boolean {
         }
     }
 
-    val nearest=route?.let{currentLocation?.let{point->nearestRoutePointIndex(it,point)}}
+    val nearest=route?.let{currentLocation?.takeIf { usableGuidanceFix }?.let{point->nearestRoutePointIndex(it,point)}}
     val nextManeuver=nearest?.let{index->route?.let{activeRoute->activeRoute.maneuvers.firstOrNull{it.endShapeIndex>index}?:activeRoute.maneuvers.lastOrNull()}}
     val maneuverDistance=route?.let{activeRoute->currentLocation?.let{point->
         nextManeuver?.let{step->activeRoute.geometry.getOrNull(step.endShapeIndex)?.let{distanceMeters(point,it).toInt()}}
@@ -254,7 +258,6 @@ internal fun openMaps(context:Context,url:String):Boolean {
     val remaining=route?.let{activeRoute->nearest?.let{remainingDurationSeconds(activeRoute,it)}}
     val eta=remaining?.let{seconds->DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.of("Africa/Nairobi")).format(Instant.now().plusSeconds(seconds.toLong()))}
     val distanceLeft=route?.let{activeRoute->nearest?.let{remainingDistanceMeters(activeRoute,it)}}
-    val accuracy = locationFix?.takeIf { it.hasAccuracy() }?.accuracy
     val atStop = accuracy != null && currentLocation != null && target != null &&
         distanceMeters(currentLocation, GeoPoint(target.latitude, target.longitude)) + accuracy < 35.0
 
@@ -266,7 +269,9 @@ internal fun openMaps(context:Context,url:String):Boolean {
         Text("© OpenStreetMap contributors · OpenFreeMap",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         if(!routingAvailable) {
             Text("In-app directions are unavailable. Open Google Maps for directions to the assigned stop.",style=MaterialTheme.typography.bodySmall)
-        } else if(!navigating)Button(onClick={disclosure=true},modifier=Modifier.fillMaxWidth()) {
+        } else if(!navigating)Button(onClick={
+            if (onStartNavigation != null) onStartNavigation(target) else disclosure = true
+        },modifier=Modifier.fillMaxWidth()) {
             Icon(MireliIcons.LocationOn,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Start in-app navigation")
         } else {
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
@@ -278,7 +283,16 @@ internal fun openMaps(context:Context,url:String):Boolean {
             if(routeLoading)LinearProgressIndicator(Modifier.fillMaxWidth())
             if(atStop)Text("You are at the assigned stop.",style=MaterialTheme.typography.titleMedium,color=MaterialTheme.colorScheme.primary)
             else nextManeuver?.let{maneuver->ManeuverCard(maneuver,maneuverDistance,route!!)}
-            route?.let{Text("${distanceLabel(distanceLeft?:it.distanceMeters)} remaining · estimated arrival ${eta?:"—"} EAT · traffic is not live",style=MaterialTheme.typography.bodySmall)}
+            if (route != null && !usableGuidanceFix) {
+                Text("GPS signal is weak. Follow the highlighted route and road signs.",
+                    style = MaterialTheme.typography.bodySmall)
+            } else if (currentLocation != null && accuracy != null && accuracy > ROUTE_ORIGIN_ACCURACY_METRES) {
+                Text("Waiting for a more accurate GPS fix. The stop is pinned on the map.",
+                    style = MaterialTheme.typography.bodySmall)
+            } else if (distanceLeft != null && eta != null) {
+                Text("${distanceLabel(distanceLeft)} remaining · estimated arrival $eta EAT",
+                    style = MaterialTheme.typography.bodySmall)
+            }
             locationError?.let{Text(it,color=MaterialTheme.colorScheme.onSurfaceVariant,style=MaterialTheme.typography.bodySmall)}
             routeError?.let{Text(it,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)}
         }
@@ -318,11 +332,14 @@ internal fun openMaps(context:Context,url:String):Boolean {
 
 private fun distanceLabel(meters:Int):String=if(meters>=1000)"%.1f km".format(meters/1000.0) else "$meters m"
 
-@Composable fun PassengerAddressMap(address:String) {
+@Composable fun PassengerAddressMap(address:String, onSearchAddress: ((String) -> Unit)? = null) {
     val context=LocalContext.current
     val url=DriverNavigation.addressSearch(address)?:return
     var confirm by remember{mutableStateOf(false)};var failed by remember{mutableStateOf(false)}
-    TextButton(onClick={confirm=true}){Text("Find address in Maps")}
+    if (onSearchAddress != null) {
+        TextButton(onClick = { onSearchAddress(address) }) { Text("Find address on Mireli map") }
+    }
+    TextButton(onClick={confirm=true}){Text("Find address in Google Maps")}
     if(confirm)AlertDialog(onDismissRequest={confirm=false},title={Text("Find the agreed address")},text={Text("This sends the address to Google Maps. Confirm the correct result with the passenger before driving; an address search is not a verified pickup pin.")},confirmButton={TextButton(onClick={confirm=false;failed=!openMaps(context,url)}){Text("Open Maps")}},dismissButton={TextButton(onClick={confirm=false}){Text("Cancel")}})
     if(failed)Text("No maps app or browser could open.",color=MaterialTheme.colorScheme.error)
 }

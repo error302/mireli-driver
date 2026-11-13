@@ -9,10 +9,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.mireli.driver.domain.NavigationStop
 import org.json.JSONObject
 
 @Composable fun LiveTripCard(trip:JSONObject,busy:Boolean,eligible:Boolean,command:(JSONObject,String,JSONObject)->Unit,
-    routeRequest:RouteRequest?=null, modifier:Modifier=Modifier, openInitially:Boolean=false) {
+    routeRequest:RouteRequest?=null, modifier:Modifier=Modifier, openInitially:Boolean=false,
+    onStartNavigation: ((NavigationStop) -> Unit)? = null,
+    onSearchAddress: ((String) -> Unit)? = null) {
     val id=trip.getString("id");val phase=trip.getString("phase");val context=LocalContext.current
     var expanded by rememberSaveable(id){mutableStateOf(false)}
     var action by rememberSaveable(id,trip.getInt("version")){mutableStateOf<String?>(null)}
@@ -60,7 +63,7 @@ import org.json.JSONObject
                 p.optString("stageName").takeIf{it.isNotBlank()&&it!="null"}?.let{Text("Stage: $it")}
                 p.optString("homeAddress").takeIf{it.isNotBlank()&&it!="null"}?.let{address->
                     Text("${if(trip.getString("direction")=="TO_TERMINUS")"Pickup" else "Drop-off"}: $address")
-                    PassengerAddressMap(address)
+                    PassengerAddressMap(address, onSearchAddress)
                 }
                 p.optString("phone").takeIf{Regex("\\+?254[17][0-9]{8}").matches(it)}?.let{phone->
                     TextButton(onClick={runCatching{context.startActivity(Intent(Intent.ACTION_DIAL,Uri.parse("tel:$phone")))}}){Text("Call passenger")}
@@ -76,7 +79,7 @@ import org.json.JSONObject
             if(phase=="in_progress")DepartureButton(onClick={bookingId=null;action="complete"},enabled=!busy,modifier=Modifier.fillMaxWidth()){
                 Icon(MireliIcons.CheckCircleOutline,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Complete delivered journey")
             }
-            if(phase in listOf("accepted","at_pickup","in_progress")) TripNavigation(trip,onRequestRoute=routeRequest)
+            if(phase in listOf("accepted","at_pickup","in_progress")) TripNavigation(trip, onRequestRoute = routeRequest, onStartNavigation = onStartNavigation)
             Text("Reference: $id",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
