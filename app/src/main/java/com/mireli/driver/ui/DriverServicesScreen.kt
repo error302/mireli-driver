@@ -53,6 +53,7 @@ private fun policyLink(raw: String): String? = runCatching {
     var payoutName by remember {mutableStateOf("")};var payoutAcknowledged by remember {mutableStateOf(false)}
     var payoutPhone by rememberSaveable {mutableStateOf("")}
     var tripHistory by rememberSaveable {mutableStateOf(false)}
+    var highlightedTripId by rememberSaveable { mutableStateOf<String?>(null) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(lifecycle, vm, state.signedIn, section) {
         if (state.signedIn && section in listOf(3, 4)) {
@@ -71,7 +72,7 @@ private fun policyLink(raw: String): String? = runCatching {
     LaunchedEffect(state.signedIn) {
         if(previouslySignedIn && !state.signedIn) {
             email="";code="";supportMessage="";payoutName="";payoutAcknowledged=false
-            supportCategory="trip";accepted=false;selectedType=null;selectedExpiry="";tripHistory=false;section=4
+            supportCategory="trip";accepted=false;selectedType=null;selectedExpiry="";tripHistory=false;highlightedTripId=null;section=4
         }
         previouslySignedIn=state.signedIn
     }
@@ -146,16 +147,27 @@ private fun policyLink(raw: String): String? = runCatching {
         }
     }
     Box(Modifier.fillMaxSize()) {
-    Scaffold(containerColor=MaterialTheme.colorScheme.background,bottomBar={NavigationBar(containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp) {
+    Scaffold(containerColor=if(section==4) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.background,bottomBar={NavigationBar(containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp) {
         listOf(
             4 to ("Home" to MireliIcons.Home),
             3 to ("Trips" to MireliIcons.CarFront),
             1 to ("Earnings" to MireliIcons.AccountBalanceWallet),
             0 to ("Account" to MireliIcons.PersonOutline)
         ).forEach { (target, item) ->
-            NavigationBarItem(selected=section==target,onClick={section=target},
-                icon={Icon(item.second,null)},label={Text(item.first)},
-                colors=NavigationBarItemDefaults.colors(indicatorColor=MaterialTheme.colorScheme.primaryContainer))
+            NavigationBarItem(selected=section==target,onClick={
+                if (target==3 && section!=3) highlightedTripId=null
+                section=target
+            },
+                icon={
+                    Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(4.dp)){
+                        HorizontalDivider(Modifier.width(14.dp),thickness=2.dp,
+                            color=if(section==target) MaterialTheme.colorScheme.secondary else Color.Transparent)
+                        Icon(item.second,null)
+                    }
+                },label={Text(item.first)},
+                colors=NavigationBarItemDefaults.colors(indicatorColor=Color.Transparent,
+                    selectedIconColor=MaterialTheme.colorScheme.secondary,
+                    selectedTextColor=MaterialTheme.colorScheme.secondary))
         }
     }}){padding->
         LazyColumn(Modifier.fillMaxSize().padding(padding).imePadding().testTag("driver_service_list"),state=listState,contentPadding=PaddingValues(horizontal=18.dp,vertical=12.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
@@ -200,14 +212,14 @@ private fun policyLink(raw: String): String? = runCatching {
                                 Surface(shape=RoundedCornerShape(MireliDesign.Radius.card),color=MaterialTheme.colorScheme.surface) {
                                     Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
                                         TripNavigation(trip,onRequestRoute=routeRequest)
-                                        OutlinedButton(onClick={tripHistory=false;section=3},modifier=Modifier.fillMaxWidth()){Text("Open journey & passengers")}
+                                        OutlinedButton(onClick={highlightedTripId=trip.optString("id");tripHistory=false;section=3},modifier=Modifier.fillMaxWidth()){Text("Open journey & passengers")}
                                     }
                                 }
                             } },
-                            onOpenTrips = { tripHistory=false; section=3 },
+                            onOpenTrips = { highlightedTripId=null; tripHistory=false; section=3 },
                             onRefresh = vm::refresh,
                             onOpenAccount = { section=0 },
-                            onOpenTrip = { tripHistory=false; section=3 },
+                            onOpenTrip = { id -> highlightedTripId=id; tripHistory=false; section=3 },
                             onStartNavigation = { tripId, stop -> navTarget=NavTarget(tripId,stop) },
                             onOpenMap = { navTarget=NavTarget(null,null) }
                         )
@@ -309,11 +321,13 @@ private fun policyLink(raw: String): String? = runCatching {
                     }
                 }else if(section==3) {
                     val allTrips=state.trips?.getJSONArray("trips")?.objects()?:emptyList()
-                    val visibleTrips=if(tripHistory)allTrips.filterNot{it.isActiveTransfer()} else allTrips.filter{it.isActiveTransfer()}.sortedWith(transferOrder())
+                    val visibleTrips=if(tripHistory)allTrips.filterNot{it.isActiveTransfer()} else
+                        allTrips.filter{it.isActiveTransfer()}.sortedWith(
+                            compareBy<JSONObject> { it.optString("id") != highlightedTripId }.then(transferOrder()))
                     item {
                         PremiumHero("Trips","Mombasa SGR transfers assigned to you",eyebrow="Assignments")
                         FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                            FilterChip(selected=!tripHistory,onClick={tripHistory=false},label={Text("Assignments")},
+                            FilterChip(selected=!tripHistory,onClick={highlightedTripId=null;tripHistory=false},label={Text("Assignments")},
                                 leadingIcon={Icon(MireliIcons.Calendar,null,Modifier.size(16.dp))})
                             FilterChip(selected=tripHistory,onClick={tripHistory=true},label={Text("History")},
                                 leadingIcon={Icon(MireliIcons.Clock,null,Modifier.size(16.dp))})

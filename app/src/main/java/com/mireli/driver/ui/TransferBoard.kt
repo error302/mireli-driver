@@ -139,7 +139,9 @@ internal fun TransferSchedule(trip: JSONObject) {
 }
 
 @Composable
-internal fun TransferEndpoints(trip: JSONObject, allowIntermediateStops: Boolean = false) {
+internal fun TransferEndpoints(
+    trip: JSONObject, allowIntermediateStops: Boolean = false, showLabels: Boolean = true
+) {
     val colors = MaterialTheme.colorScheme
     val stages = trip.navigationStops()
     val direction = trip.optString("direction")
@@ -153,18 +155,20 @@ internal fun TransferEndpoints(trip: JSONObject, allowIntermediateStops: Boolean
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(Modifier.width(22.dp).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(MireliIcons.TripOrigin, null, tint = colors.primary, modifier = Modifier.size(20.dp))
+                Icon(MireliIcons.TripOrigin, null,
+                    tint = if (showLabels) colors.primary else colors.secondary, modifier = Modifier.size(20.dp))
                 VerticalDivider(Modifier.weight(1f), thickness = 2.dp, color = colors.outlineVariant)
             }
             Column(Modifier.weight(1f).padding(bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 val label = if (booked.size > 1 && direction == "TO_TERMINUS") "First pickup" else "Pickup"
-                EndpointLabel(label, pickup?.name ?: if (doorAddress) "See manifest for the address" else "Confirm pickup with dispatch")
+                EndpointLabel(label, pickup?.name ?: if (doorAddress) "See manifest for the address" else "Confirm pickup with dispatch", showLabels)
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Icon(MireliIcons.LocationOn, null, tint = colors.secondary, modifier = Modifier.size(22.dp))
+            Icon(if (showLabels) MireliIcons.LocationOn else MireliIcons.TripOrigin, null,
+                tint = if (showLabels) colors.secondary else colors.primary, modifier = Modifier.size(22.dp))
             val label = if (booked.size > 1 && direction == "FROM_TERMINUS") "First drop-off" else "Drop-off"
-            EndpointLabel(label, dropoff?.name ?: if (doorAddress) "See manifest for the address" else "Confirm drop-off with dispatch")
+            EndpointLabel(label, dropoff?.name ?: if (doorAddress) "See manifest for the address" else "Confirm drop-off with dispatch", showLabels)
         }
         if (allowIntermediateStops && otherStops.isNotEmpty()) {
             TextButton(onClick = { expanded = !expanded }) {
@@ -184,9 +188,9 @@ internal fun TransferEndpoints(trip: JSONObject, allowIntermediateStops: Boolean
 }
 
 @Composable
-private fun EndpointLabel(label: String, name: String) {
+private fun EndpointLabel(label: String, name: String, showLabel: Boolean) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (showLabel) Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
     }
 }

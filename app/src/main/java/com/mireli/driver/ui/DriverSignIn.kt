@@ -3,12 +3,23 @@ package com.mireli.driver.ui
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalUriHandler
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -47,47 +58,40 @@ fun DriverSignInScreen(
     val canVerify = !state.loading && code.length == 6
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
+    val list = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val emailFocus = remember { FocusRequester() }
+    val links = LocalUriHandler.current
+    var policyError by remember { mutableStateOf(false) }
 
     LazyColumn(
-        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
+        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)
             .statusBarsPadding().navigationBarsPadding().imePadding(),
+        state = list,
         contentPadding = PaddingValues(bottom = 16.dp)
     ) {
     item {
-        Surface(color = StationNavy) {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 24.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Surface(shape = MaterialTheme.shapes.small, color = Color.White) {
-                        Image(painterResource(R.drawable.mireli_driver_logo), null, Modifier.size(44.dp))
-                    }
-                    Text("Mireli Driver", color = Color.White,
-                        style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                }
-                if (!verifying) {
-                    Spacer(Modifier.height(24.dp))
-                    Text("Drive Mombasa’s\nSGR transfers", color = Color.White,
-                        style = MaterialTheme.typography.displaySmall)
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Mombasa Terminus", Modifier.weight(1f), color = StationMint,
-                            style = MaterialTheme.typography.labelLarge)
-                        StationLines(Modifier.width(70.dp).height(32.dp))
-                        Text("Local stops", color = StationMint, style = MaterialTheme.typography.labelLarge)
-                    }
-                }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Surface(shape = MaterialTheme.shapes.small, color = Color.White) {
+                Image(painterResource(R.drawable.mireli_driver_logo), null, Modifier.size(34.dp))
+            }
+            Spacer(Modifier.width(8.dp))
+            Text("Mireli Driver", Modifier.weight(1f),
+                style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            IconButton(onClick = onSupport) {
+                Icon(MireliIcons.HeadsetMic, "Help and support", tint = MaterialTheme.colorScheme.secondary)
             }
         }
     }
     item {
-        Surface(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
-            shape = RoundedCornerShape(MireliDesign.Radius.hero),
-            color = MaterialTheme.colorScheme.surface,
-            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-        ) {
-            Column(Modifier.padding(20.dp),
+            Column(Modifier.fillMaxWidth().padding(horizontal = 26.dp).padding(top = 44.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Text(if (verifying) "Check your email" else "Sign in to drive",
-                    Modifier.testTag("driver_sign_in_title"), style = MaterialTheme.typography.headlineSmall)
+                    Modifier.testTag("driver_sign_in_title"), style = MaterialTheme.typography.displaySmall,
+                    color = MaterialTheme.colorScheme.secondary)
+                if (!verifying) Text("Enter your email to receive a sign-in code.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (BuildConfig.DRIVER_SERVICE_TEST) {
                     Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.secondaryContainer) {
                         Text("STAGING · Simulated sign-in and payouts", Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -104,12 +108,11 @@ fun DriverSignInScreen(
 
                 if (!verifying) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
+                        TextField(
                             email,
                             { onEmailChange(it.take(254)) },
                             label = { Text("Email address") },
                             placeholder = { Text("you@example.com") },
-                            leadingIcon = { Icon(MireliIcons.Mail, null) },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Done),
                             keyboardActions = KeyboardActions(onDone = {
                                 if (canRequest) {
@@ -118,19 +121,17 @@ fun DriverSignInScreen(
                             }),
                             singleLine = true,
                             enabled = signInOpen && !state.loading,
-                            shape = MaterialTheme.shapes.medium,
                             colors = signInFieldColors(),
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp).testTag("driver_email_field")
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp).focusRequester(emailFocus)
+                                .testTag("driver_email_field")
                         )
-                        Text("We email you a 6-digit code. No password.",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    MireliPrimaryButton(
+                    DepartureButton(
                         onClick = { focus.clearFocus(); keyboard?.hide(); onRequestCode() },
                         enabled = canRequest,
                         modifier = Modifier.fillMaxWidth().testTag("driver_send_code")
                     ) {
-                        Text(if (signInOpen) "Send sign-in code" else if (state.loading) "Checking sign-in…" else "Sign-in unavailable",
+                        Text(if (state.loading) "Checking sign-in…" else if (signInOpen) "Send sign-in code" else "Sign-in unavailable",
                             style = MaterialTheme.typography.titleMedium)
                     }
                 } else {
@@ -147,7 +148,7 @@ fun DriverSignInScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Spacer(Modifier.height(6.dp))
-                        OutlinedTextField(
+                        TextField(
                             code,
                             { onCodeChange(it.filter(Char::isDigit).take(6)) },
                             textStyle = MaterialTheme.typography.headlineMedium.copy(letterSpacing = 8.sp),
@@ -156,14 +157,13 @@ fun DriverSignInScreen(
                             keyboardActions = KeyboardActions(onDone = { if (canVerify) { focus.clearFocus(); keyboard?.hide(); onVerifyCode() } }),
                             singleLine = true,
                             enabled = !state.loading,
-                            shape = MaterialTheme.shapes.medium,
                             colors = signInFieldColors(),
                             modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp)
                         )
                     }
-                    MireliPrimaryButton(onClick = { focus.clearFocus(); keyboard?.hide(); onVerifyCode() },
+                    DepartureButton(onClick = { focus.clearFocus(); keyboard?.hide(); onVerifyCode() },
                         enabled = canVerify, modifier = Modifier.fillMaxWidth()) {
-                        Text("Verify and continue", style = MaterialTheme.typography.titleMedium)
+                        Text(if (state.loading) "Verifying…" else "Verify and continue", style = MaterialTheme.typography.titleMedium)
                     }
                     TextButton(onClick = { onRequestCode() }, enabled = !state.loading && resendInSeconds <= 0L,
                         modifier = Modifier.fillMaxWidth()) {
@@ -181,44 +181,57 @@ fun DriverSignInScreen(
                 }
 
                 if (signInOpen && state.registrationOpen == true && !verifying) {
-                    Text(
-                        "New to Mireli? Use your email to start a driver application. Have your licence and vehicle documents ready.",
-                        Modifier.testTag("driver_sign_in_promo"),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = onSupport) {
-                        Icon(MireliIcons.HeadsetMic, null, Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Support")
+                    TextButton(onClick = {
+                        scope.launch {
+                            list.animateScrollToItem(1)
+                            emailFocus.requestFocus()
+                            keyboard?.show()
+                        }
+                    }, enabled = !state.loading, modifier = Modifier.testTag("driver_sign_in_promo")) {
+                        Text("New driver? Start application", color = MaterialTheme.colorScheme.secondary)
                     }
-                    Spacer(Modifier.weight(1f))
-                    AppearanceToggle(showSettings = true)
                 }
+                AppearanceToggle(showSettings = true)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                    listOf("Privacy" to "privacy", "Terms" to "terms").forEach { (label, path) ->
+                        TextButton(onClick = {
+                            policyError = runCatching { links.openUri("https://mireli.online/$path") }.isFailure
+                        }) {
+                            Text(label, color = MaterialTheme.colorScheme.secondary)
+                        }
+                    }
+                }
+                if (policyError) Text("Open mireli.online in a browser to read the policies.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 if (supportAddressFailed) Text("Email driver support at ${state.supportEmail}.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 if (onClose != null) TextButton(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text("Back to preview") }
             }
-        }
     }
     }
 }
 
 @Composable
-private fun signInFieldColors() = OutlinedTextFieldDefaults.colors(
-    focusedContainerColor = MaterialTheme.colorScheme.surface,
-    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-    focusedBorderColor = MaterialTheme.colorScheme.primary,
-    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-    disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-    disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-    disabledLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-    disabledBorderColor = MaterialTheme.colorScheme.outline
+private fun signInFieldColors() = TextFieldDefaults.colors(
+    focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
+    disabledContainerColor = Color.Transparent,
+    focusedIndicatorColor = MaterialTheme.colorScheme.secondary,
+    unfocusedIndicatorColor = MaterialTheme.colorScheme.outline
 )
+
+@Composable
+internal fun DepartureButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    content: @Composable RowScope.() -> Unit
+) {
+    val interaction = remember { MutableInteractionSource() }
+    Button(onClick = onClick, modifier = modifier.heightIn(min = 50.dp).pressScale(interaction),
+        enabled = enabled, shape = CircleShape, interactionSource = interaction,
+        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary,
+            contentColor = MaterialTheme.colorScheme.onSecondary), content = content)
+}
 
 @Composable
 internal fun SignInServiceNotice(state: DriverServiceState) {

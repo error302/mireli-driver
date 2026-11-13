@@ -20,6 +20,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -331,6 +333,32 @@ internal fun VerifiedBadge(
     approvedDocuments: Int = 0,
     requiredDocuments: Int = 0
 ) {
+    if (verified && compact) {
+        androidx.compose.foundation.Canvas(
+            modifier.size(18.dp).semantics { contentDescription = "Verified driver" }
+        ) {
+            val center = size.width / 2f
+            val edge = androidx.compose.ui.graphics.Path()
+            repeat(20) { index ->
+                val angle = index * kotlin.math.PI / 10 - kotlin.math.PI / 2
+                val radius = center * if (index % 2 == 0) 1f else .84f
+                val x = center + (kotlin.math.cos(angle) * radius).toFloat()
+                val y = center + (kotlin.math.sin(angle) * radius).toFloat()
+                if (index == 0) edge.moveTo(x, y) else edge.lineTo(x, y)
+            }
+            edge.close()
+            drawPath(edge, Color(0xFF0079CE))
+            val check = androidx.compose.ui.graphics.Path().apply {
+                moveTo(size.width * .28f, size.height * .51f)
+                lineTo(size.width * .44f, size.height * .66f)
+                lineTo(size.width * .72f, size.height * .36f)
+            }
+            drawPath(check, Color.White, style = androidx.compose.ui.graphics.drawscope.Stroke(
+                width = size.width * .105f, cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                join = androidx.compose.ui.graphics.StrokeJoin.Round))
+        }
+        return
+    }
     val tint = if (verified) VerifiedBlue else MaterialTheme.colorScheme.onSurfaceVariant
     val background = if (verified) VerifiedBlue.copy(alpha = .12f) else MaterialTheme.colorScheme.surfaceVariant
     Row(
