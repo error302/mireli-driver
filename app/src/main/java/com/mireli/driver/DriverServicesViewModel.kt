@@ -164,9 +164,13 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
         serviceStatus()
         loadAccount()
     }
-    fun payoutDestination(name:String)=work {
+    fun payoutDestination(name:String,mpesaNumber:String="")=work {
         val version=mutable.value.earnings?.getJSONObject("destination")?.getInt("version")?:return@work
-        api.request("/payout-destination","POST",session?.token,json=JSONObject().put("expectedVersion",version).put("accountName",name.trim()).put("acknowledged",true))
+        val body=JSONObject().put("expectedVersion",version).put("accountName",name.trim()).put("acknowledged",true)
+        // Sent only when the driver attached a number. Older services ignore the field;
+        // Daraja-ready services persist it as the disbursement destination.
+        com.mireli.driver.domain.OnboardingPolicy.normalizePhone(mpesaNumber)?.let{body.put("phoneNumber",it)}
+        api.request("/payout-destination","POST",session?.token,json=body)
         loadAccount()
     }
     fun tripCommand(trip:JSONObject,action:String,details:JSONObject=JSONObject())=work {

@@ -119,6 +119,10 @@ object MireliIcons {
     /** Crescent moon, shown when tapping the control darkens the app. */
     val Moon by lazy { icon("Moon", "M20,14.5A8.5,8.5 0,1 1,9.5,4A7,7 0,1 0,20,14.5Z") }
 
+    val Visibility by lazy { icon("Visibility", "M2,12C4,7 8,5 12,5C16,5 20,7 22,12C20,17 16,19 12,19C8,19 4,17 2,12Z M12,9A3,3 0,1 0,12,15A3,3 0,1 0,12,9") }
+
+    val VisibilityOff by lazy { icon("VisibilityOff", "M4,4L20,20 M9.9,5.2A7.6,7.6 0,0 1,12,5C16,5 20,7 22,12A13.2,13.2 0,0 1,18.6,16.2 M6.2,7.4A13.4,13.4 0,0 0,2,12C4,17 8,19 12,19C13.5,19 15,18.7 16.4,18.1 M9.9,9.9A3,3 0,0 0,14,14") }
+
     private fun icon(name: String, path: String) = ImageVector.Builder(
         name = name, defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f
     ).addPath(pathData = addPathNodes(path), fill = null, stroke = SolidColor(Color.Black),

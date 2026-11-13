@@ -76,7 +76,7 @@ class ThemePreference(context:Context) {
 
 private val LightColors=lightColorScheme(
     primary=Color(0xFF0B826E),onPrimary=Color.White,primaryContainer=Color(0xFFE0F3EC),onPrimaryContainer=Color(0xFF06302A),
-    secondary=Color(0xFF101820),onSecondary=Color.White,secondaryContainer=Color(0xFFE9EFF1),onSecondaryContainer=Color(0xFF101820),
+    secondary=Color(0xFF1565A8),onSecondary=Color.White,secondaryContainer=Color(0xFFDFEDFA),onSecondaryContainer=Color(0xFF0B2E4E),
     tertiary=Color(0xFFEF6C1A),onTertiary=Color.White,tertiaryContainer=Color(0xFFFFEBDD),onTertiaryContainer=Color(0xFF7A2C00),
     background=Color(0xFFF7F9F8),onBackground=Color(0xFF101820),surface=Color.White,onSurface=Color(0xFF101820),
     surfaceVariant=Color(0xFFEDF2EF),onSurfaceVariant=Color(0xFF5A6B66),
@@ -85,7 +85,7 @@ private val LightColors=lightColorScheme(
 
 private val DarkColors=darkColorScheme(
     primary=Color(0xFF4FD8B8),onPrimary=Color(0xFF00261F),primaryContainer=Color(0xFF0C3A31),onPrimaryContainer=Color(0xFFA9F2DF),
-    secondary=Color(0xFFCFE0E8),onSecondary=Color(0xFF0B1620),secondaryContainer=Color(0xFF1B2A33),onSecondaryContainer=Color(0xFFDCEBF2),
+    secondary=Color(0xFF9CC8EF),onSecondary=Color(0xFF0A2338),secondaryContainer=Color(0xFF173A5A),onSecondaryContainer=Color(0xFFD6E9FB),
     tertiary=Color(0xFFFFB27A),onTertiary=Color(0xFF4A1E00),tertiaryContainer=Color(0xFF4A2A12),onTertiaryContainer=Color(0xFFFFD9BC),
     background=Color(0xFF0B1116),onBackground=Color(0xFFE8F0F2),surface=Color(0xFF101820),onSurface=Color(0xFFE8F0F2),
     surfaceVariant=Color(0xFF1B2A31),onSurfaceVariant=Color(0xFFA9BCC4),

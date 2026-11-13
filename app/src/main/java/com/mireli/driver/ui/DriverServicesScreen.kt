@@ -51,14 +51,15 @@ private fun policyLink(raw: String): String? = runCatching {
     var section by rememberSaveable {mutableIntStateOf(4)};var accepted by rememberSaveable {mutableStateOf(false)}
     var supportCategory by rememberSaveable {mutableStateOf("trip")};var supportMessage by remember {mutableStateOf("")}
     var payoutName by remember {mutableStateOf("")};var payoutAcknowledged by remember {mutableStateOf(false)}
+    var payoutPhone by rememberSaveable {mutableStateOf("")}
     var tripHistory by rememberSaveable {mutableStateOf(false)}
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(lifecycle, vm, state.signedIn, section) {
-        if (state.signedIn && section in listOf(3, 4, 5)) {
+        if (state.signedIn && section in listOf(3, 4)) {
             lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
                 while (true) {
                     vm.refreshAssignments()
-                    delay(30_000)
+                    delay(60_000)
                 }
             }
         }
@@ -76,6 +77,8 @@ private fun policyLink(raw: String): String? = runCatching {
     }
     val uriHandler=LocalUriHandler.current
     val context = LocalContext.current
+    val earningsPrefs = remember { context.getSharedPreferences("earnings", android.content.Context.MODE_PRIVATE) }
+    var hideBalance by rememberSaveable { mutableStateOf(earningsPrefs.getBoolean("hideBalance", false)) }
     var showSupportAddress by rememberSaveable { mutableStateOf(false) }
     val routeRequest: RouteRequest? = if (state.navigationOpen) vm::navigationRoute else null
     val listState=rememberLazyListState();val focus=LocalFocusManager.current;val keyboard=LocalSoftwareKeyboardController.current
@@ -91,7 +94,7 @@ private fun policyLink(raw: String): String? = runCatching {
     }
     LaunchedEffect(state.supportSent){if(state.supportSent>0){supportMessage="";focus.clearFocus();keyboard?.hide()}}
     val picker=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){uri->val type=selectedType;selectedType=null;if(uri!=null&&type!=null)vm.upload(type,selectedExpiry,uri)}
-    val onboarding=state.onboarding;val app=onboarding?.getJSONObject("application")
+    val onboarding=state.onboarding;val app=onboarding?.optJSONObject("application")
     val privacyLink = policyLink(onboarding?.optString("privacyUrl").orEmpty())
     val termsLink = policyLink(onboarding?.optString("termsUrl").orEmpty())
     val policiesAvailable = BuildConfig.DRIVER_SERVICE_TEST || (privacyLink != null && termsLink != null)
@@ -147,7 +150,6 @@ private fun policyLink(raw: String): String? = runCatching {
         listOf(
             4 to ("Home" to MireliIcons.Home),
             3 to ("Trips" to MireliIcons.CarFront),
-            5 to ("Trains" to MireliIcons.TrainFront),
             1 to ("Earnings" to MireliIcons.AccountBalanceWallet),
             0 to ("Account" to MireliIcons.PersonOutline)
         ).forEach { (target, item) ->
@@ -162,18 +164,19 @@ private fun policyLink(raw: String): String? = runCatching {
             if(BuildConfig.DRIVER_SERVICE_TEST)item {Card {Text("STAGING · Simulated sign-in and payouts",Modifier.padding(16.dp))}}
             if(state.loading)item {LinearProgressIndicator(Modifier.fillMaxWidth())}
             state.error?.let {error->item {Card(colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.errorContainer)){Text(error,Modifier.padding(16.dp),color=MaterialTheme.colorScheme.onErrorContainer)}} }
-                item {FlowRow(horizontalArrangement=Arrangement.spacedBy(10.dp)){
-                    OutlinedButton(onClick=vm::refresh,enabled=!state.loading) {
-                        Icon(MireliIcons.Refresh,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Refresh account")
-                    }
-                    TextButton(onClick={com.mireli.driver.service.TripTracking.stop(trackingContext);vm.signOut()},enabled=!state.loading){Text("Sign out")}
-                }}
+            if(section==0)item {FlowRow(horizontalArrangement=Arrangement.spacedBy(10.dp)){
+                OutlinedButton(onClick=vm::refresh,enabled=!state.loading) {
+                    Icon(MireliIcons.Refresh,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Refresh account")
+                }
+                TextButton(onClick={com.mireli.driver.service.TripTracking.stop(trackingContext);vm.signOut()},enabled=!state.loading){Text("Sign out")}
+            }}
                 if(state.pendingTripAction)item {Card{Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
                     Text("One saved trip action needs confirmation",style=MaterialTheme.typography.titleMedium)
                     Text("The app keeps the same action ID after a connection failure or restart. Check it before making another trip change.")
                     Button(onClick=vm::retryTripAction,enabled=!state.loading){Text("Check saved action")}
                 }}}
-                if(section in listOf(4,3,5) && !state.loading && !state.tripDataCurrent)item {
+                if((section==3 || section==4&&state.eligibility?.optBoolean("eligible")==true) &&
+                    !state.loading && !state.tripDataCurrent)item {
                     Column(verticalArrangement=Arrangement.spacedBy(6.dp)) {
                         DriverNotice(MireliIcons.Refresh,"Assignments need a refresh",
                             "Refresh to check for changes before updating a trip.")
@@ -189,8 +192,10 @@ private fun policyLink(raw: String): String? = runCatching {
                             name = onboarding?.optJSONObject("profile")?.optString("fullName")
                                 ?.takeIf{it.isNotBlank()&&it!="New applicant"},
                             eligible = state.eligibility?.optBoolean("eligible")==true,
+                            verified = state.eligibility?.optBoolean("verified")==true,
+                            applicationStatus = app?.optString("status"),
+                            tripsCurrent = state.tripDataCurrent,
                             trips = trips,
-                            earnings = state.earnings,
                             activeNavigation = activeTrip?.let { trip -> {
                                 Surface(shape=RoundedCornerShape(MireliDesign.Radius.card),color=MaterialTheme.colorScheme.surface) {
                                     Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
@@ -200,23 +205,11 @@ private fun policyLink(raw: String): String? = runCatching {
                                 }
                             } },
                             onOpenTrips = { tripHistory=false; section=3 },
-                            onOpenTrains = { section=5 },
-                            onOpenEarnings = { section=1 },
+                            onRefresh = vm::refresh,
                             onOpenAccount = { section=0 },
                             onOpenTrip = { tripHistory=false; section=3 },
                             onStartNavigation = { tripId, stop -> navTarget=NavTarget(tripId,stop) },
                             onOpenMap = { navTarget=NavTarget(null,null) }
-                        )
-                    }
-                }else if(section==5) {
-                    val allTrips=state.trips?.optJSONArray("trips")?.objects()
-                    item {
-                        StationArrivalsPanel(
-                            trips = allTrips,
-                            eligible = state.eligibility?.optBoolean("eligible")==true,
-                            stationHint = onboarding?.optJSONObject("profile")?.optString("stationHint")?.takeIf{it.isNotBlank()},
-                            onOpenTrip = { tripHistory=false; section=3 },
-                            onOpenTrips = { tripHistory=false; section=3 }
                         )
                     }
                 }else if(section==0&&onboarding!=null&&app!=null) {
@@ -238,8 +231,16 @@ private fun policyLink(raw: String): String? = runCatching {
                         }
                     }}}
                     item {ServerProfile(onboarding,state.loading,vm::profile)}
-                    item {Text("Driver documents",style=MaterialTheme.typography.titleLarge);Text("Documents go to Mireli's private review service. Uploading does not grant approval. This server accepts files up to ${onboarding.getInt("maxDocumentBytes")/1024/1024} MB.")}
+                    item {Text("Driver documents",style=MaterialTheme.typography.titleLarge)}
+                    item {CollapsibleCard(MireliIcons.PrivacyTip,"About your documents",
+                        "Private review service · up to ${onboarding.getInt("maxDocumentBytes")/1024/1024} MB · reviewed within a day of enrollment.") {
+                        Text("Documents go to Mireli's private review service. Uploading does not grant approval. This server accepts files up to ${onboarding.getInt("maxDocumentBytes")/1024/1024} MB. Completed applications are reviewed within one day of enrollment.",
+                            style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    }}
+                    item {DriverTip("account_documents",MireliIcons.PrivacyTip,"Three steps to your first transfer",
+                        "Save your profile, upload each listed document, then submit for review. Mireli reviews completed applications within one day of enrollment.")}
                     val documents=app.getJSONArray("documents").objects()
+                    val graceUntil=state.eligibility?.optString("graceUntil")?.takeIf{it.isNotBlank()&&it!="null"}
                     items(onboarding.getJSONArray("requirements").objects(),key={it.getString("id")}) {requirement->
                         val id=requirement.getString("id");val evidence=documents.firstOrNull{it.getString("type")==id}
                         var expiry by rememberSaveable(id,app.getInt("version")){mutableStateOf(evidence?.optString("expiresAt")?.take(10)?.takeIf{it!="null"}?:"")}
@@ -248,40 +249,60 @@ private fun policyLink(raw: String): String? = runCatching {
                             Text(if(requirement.getBoolean("required"))"Required" else "Optional, if requested")
                             Text(if(evidence==null)"Not uploaded" else "${evidence.getString("state").replace('_',' ')} · scan ${evidence.getString("scanState").replace('_',' ')}")
                             evidence?.optString("reviewReason")?.takeIf{it.isNotBlank()&&it!="null"}?.let{Text(it)}
+                            if (graceUntil != null && evidence != null && evidence.getString("state") == "expired") {
+                                Text("Expired — grace period applies until $graceUntil. Replace the evidence before it ends to keep your verified check.",
+                                    color=MaterialTheme.colorScheme.tertiary,style=MaterialTheme.typography.bodySmall)
+                            }
                             if(requirement.getBoolean("expires"))OutlinedTextField(expiry,{expiry=it.take(10)},label={Text("Expiry · YYYY-MM-DD")},singleLine=true,enabled=!state.loading)
-                            OutlinedButton(onClick={selectedType=id;selectedExpiry=expiry;picker.launch(arrayOf("application/pdf","image/jpeg","image/png"))},enabled=policiesAvailable&&!state.loading&&app.getString("status") in listOf("draft","changes_requested","approved")) {Text(if(evidence==null)"Upload document" else "Replace evidence")}
+                            OutlinedButton(onClick={selectedType=id;selectedExpiry=expiry;picker.launch(arrayOf("application/pdf","image/*"))},enabled=!state.loading&&app.getString("status") in listOf("draft","changes_requested","approved")) {Text(if(evidence==null)"Upload document" else "Replace evidence")}
                         }}
                     }
+                    item {DriverPrivacyNotice(onboarding,state.supportEmail)}
                     item {Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
                         listOf("Driver terms" to termsLink, "Privacy notice" to privacyLink).forEach { (label, url) ->
                             if (url != null) TextButton(onClick={policyLinkError = runCatching { uriHandler.openUri(url) }.isFailure}) {Text(label)}
                         }
                         if (policyLinkError) Text("A browser is needed to open these policies.",color=MaterialTheme.colorScheme.error)
-                        if (!policiesAvailable) Text("Driver terms and the privacy notice are required before uploading or submitting. Contact Mireli Support.")
-                        Row(Modifier.fillMaxWidth().toggleable(accepted,enabled=policiesAvailable&&!state.loading,role=Role.Checkbox,onValueChange={accepted=it})){Checkbox(accepted,null,enabled=policiesAvailable&&!state.loading);Text(if(BuildConfig.DRIVER_SERVICE_TEST)"I acknowledge this synthetic application and test checklist." else "I have read the current driver terms and privacy notice.")}
-                        Button(onClick={vm.submit(accepted)},enabled=policiesAvailable&&!state.loading&&accepted&&app.getString("status") in listOf("draft","changes_requested"),modifier=Modifier.fillMaxWidth()){Text("Submit for compliance review")}
+                        if (!policiesAvailable) Text("Driver terms and privacy notice are unavailable. Refresh your account before submitting.",
+                            color=MaterialTheme.colorScheme.error)
+                        Row(Modifier.fillMaxWidth().toggleable(accepted,enabled=!state.loading&&policiesAvailable,role=Role.Checkbox,onValueChange={accepted=it})){
+                            Checkbox(accepted,null,enabled=!state.loading&&policiesAvailable)
+                            Text(if(BuildConfig.DRIVER_SERVICE_TEST)"I acknowledge this synthetic application and test checklist." else "I have read the current driver terms and privacy notice.")
+                        }
+                        Button(onClick={vm.submit(accepted)},enabled=!state.loading&&policiesAvailable&&accepted&&app.getString("status") in listOf("draft","changes_requested"),modifier=Modifier.fillMaxWidth()){Text("Submit for compliance review")}
+                        Text("Mireli reviews completed applications within one day of enrollment.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.primary)
                     }}
                 }else if(section==1) {
-                    item {PremiumHero("Earnings & payouts","Track each settlement and your payout destination.",eyebrow="Earnings")}
+                    fun shown(minor:Long):String=if(hideBalance)"KSh ••••" else money(minor)
+                    item {
+                        Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                            Box(Modifier.weight(1f)) {PremiumHero("Earnings & payouts","Track each settlement and your payout destination.",eyebrow="Earnings")}
+                            IconButton(onClick={hideBalance=!hideBalance;earningsPrefs.edit().putBoolean("hideBalance",hideBalance).apply()}) {
+                                Icon(if(hideBalance)MireliIcons.Visibility else MireliIcons.VisibilityOff,
+                                    if(hideBalance)"Show balances" else "Hide balances",tint=MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
                     state.earnings?.let{statement->
-                        item {DriverEarningsHero("Confirmed paid earnings",statement.getJSONArray("totals").objects().filter{it.getString("status")=="completed"}.sumOf{it.getLong("netMinor")},"Returned statement totals · pending transfers are shown separately below")}
+                        item {DriverEarningsHero("Confirmed paid earnings",statement.getJSONArray("totals").objects().filter{it.getString("status")=="completed"}.sumOf{it.getLong("netMinor")},"Returned statement totals · pending transfers are shown separately below",hideBalance)}
                         item {Text("Payout destination: ${statement.optString("destinationMasked","Not set")}")}
                         val destination=statement.getJSONObject("destination")
                         item {Card{Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
                             Text("Beneficiary: ${destination.getString("status").replace('_',' ')}",style=MaterialTheme.typography.titleMedium)
-                            Text("Payout setup uses the phone recorded in your driver profile. Email verification does not verify an M-Pesa account. Finance checks your account name and identity evidence before approval. Use Support if you need a different phone.")
+                            Text("Attach the M-Pesa number that receives your disbursements. Finance checks your account name and identity evidence before approval; you are told when M-Pesa payouts switch on.")
                             destination.optString("reviewNote").takeIf{it.isNotBlank()&&it!="null"}?.let{Text(it)}
                             if(destination.getString("status") in listOf("not_configured","rejected")) {
                                 OutlinedTextField(payoutName,{payoutName=it.take(100)},label={Text("Name on your M-Pesa account")},enabled=!state.loading,modifier=Modifier.fillMaxWidth())
-                                Row(Modifier.fillMaxWidth().toggleable(payoutAcknowledged,enabled=!state.loading,role=Role.Checkbox,onValueChange={payoutAcknowledged=it})){Checkbox(payoutAcknowledged,null);Text("This profile phone is my M-Pesa account.")}
-                                Button(onClick={vm.payoutDestination(payoutName)},enabled=!state.loading&&payoutAcknowledged&&payoutName.trim().length>=3){Text("Request beneficiary review")}
+                                OutlinedTextField(payoutPhone,{payoutPhone=it.take(20)},label={Text("M-Pesa number (07XX… or 2547XX…)")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Phone),singleLine=true,enabled=!state.loading,modifier=Modifier.fillMaxWidth())
+                                Row(Modifier.fillMaxWidth().toggleable(payoutAcknowledged,enabled=!state.loading,role=Role.Checkbox,onValueChange={payoutAcknowledged=it})){Checkbox(payoutAcknowledged,null);Text("This M-Pesa number and account name are mine.")}
+                                Button(onClick={vm.payoutDestination(payoutName,payoutPhone)},enabled=!state.loading&&payoutAcknowledged&&payoutName.trim().length>=3){Text("Request beneficiary review")}
                             }
                         }}}
-                        items(statement.getJSONArray("totals").objects()){total->Card(Modifier.fillMaxWidth()){Column(Modifier.padding(16.dp)){Text(total.getString("status").replace('_',' '));Text(money(total.getLong("netMinor")),style=MaterialTheme.typography.headlineSmall)}}}
+                        items(statement.getJSONArray("totals").objects()){total->Card(Modifier.fillMaxWidth()){Column(Modifier.padding(16.dp)){Text(total.getString("status").replace('_',' '));Text(shown(total.getLong("netMinor")),style=MaterialTheme.typography.headlineSmall)}}}
                         items(statement.getJSONArray("lines").objects(),key={it.getString("id")}){line->Card(Modifier.fillMaxWidth()){Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
                             Text(line.getString("routeName"),style=MaterialTheme.typography.titleMedium);Text("${line.getString("serviceType")} · ${line.getString("status").replace('_',' ')}")
-                            Text("Gross ${money(line.getLong("grossMinor"))} · Commission ${money(line.getLong("commissionMinor"))}")
-                            Text("Home surcharge ${money(line.getLong("surchargeMinor"))} · Net ${money(line.getLong("netMinor"))}")
+                            Text("Gross ${shown(line.getLong("grossMinor"))} · Commission ${shown(line.getLong("commissionMinor"))}")
+                            Text("Home surcharge ${shown(line.getLong("surchargeMinor"))} · Net ${shown(line.getLong("netMinor"))}")
                             line.optString("failureReason").takeIf{it.isNotBlank()&&it!="null"}?.let{Text(it)}
                         }}}
                         if(statement.getJSONArray("lines").length()==0)item {Text("No settlement records yet. Completed eligible journeys will appear here.")}

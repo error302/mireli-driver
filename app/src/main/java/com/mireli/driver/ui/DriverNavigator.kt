@@ -16,6 +16,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -34,13 +36,17 @@ import com.mireli.driver.domain.DriverNavigation
 import com.mireli.driver.domain.DriverRoute
 import com.mireli.driver.domain.GeoPoint
 import com.mireli.driver.domain.NavigationStop
+import com.mireli.driver.domain.PlaceSearch
 import com.mireli.driver.domain.SimulatedDrive
 import com.mireli.driver.domain.distanceMeters
 import com.mireli.driver.domain.nearestRoutePointIndex
 import com.mireli.driver.domain.offRouteMetres
 import com.mireli.driver.domain.remainingDistanceMeters
 import com.mireli.driver.domain.estimatedRemainingSeconds
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.time.Instant
 import java.time.ZoneId
@@ -189,6 +195,14 @@ internal fun DriverNavigationScreen(
     var manualFallback by remember { mutableStateOf(false) }
     var expanded by rememberSaveable { mutableStateOf(false) }
     var offRouteSamples by remember { mutableIntStateOf(0) }
+    // Free-form destination preview: the driver keys in any destination and gets the shortest
+    // road path with a live shrinking distance. It is a preview, never an authorized dispatch route.
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var searchResults by remember { mutableStateOf<List<PlaceSearch.Place>?>(null) }
+    var searching by remember { mutableStateOf(false) }
+    var searchError by remember { mutableStateOf<String?>(null) }
+    var previewStop by remember { mutableStateOf<NavigationStop?>(null) }
+    val scope = rememberCoroutineScope()
     val granted = locationPermissionGranted(context)
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
         if (result[Manifest.permission.ACCESS_FINE_LOCATION] != true &&
@@ -242,6 +256,45 @@ internal fun DriverNavigationScreen(
     } }
     val remainingTime = route?.let { r -> nearest?.let { estimatedRemainingSeconds(r, it) } }
     val remainingDistance = route?.let { r -> nearest?.let { remainingDistanceMeters(r, it) } }
+    val mapTarget = stop ?: previewStop
+
+    fun searchDestination(query: String) {
+        scope.launch {
+            searching = true; searchError = null
+            // Both services are blocking HTTP. rememberCoroutineScope() runs on the main
+            // dispatcher, so without this hop the UI thread stalls and the call fails.
+            runCatching { withContext(Dispatchers.IO) { PlaceSearch.search(query, current) } }
+                .onSuccess { results ->
+                    searchResults = results
+                    if (results.isEmpty()) searchError = "No place matched. Try a road or landmark name."
+                }
+                .onFailure { searchError = it.message?.take(160) ?: "Search is unavailable right now." }
+            searching = false
+        }
+    }
+    fun previewTo(place: PlaceSearch.Place) {
+        val from = current ?: run {
+            searchError = "Wait for a GPS fix, then choose the destination again."
+            return
+        }
+        searchResults = null
+        searchError = null
+        previewStop = NavigationStop("preview-${place.id}", place.name, place.point.latitude, place.point.longitude)
+        scope.launch {
+            loading = true; routeError = null
+            runCatching { withContext(Dispatchers.IO) { PlaceSearch.route(from, place.point) } }
+                .onSuccess { routeState = it.route }
+                .onFailure { routeError = it.message?.take(160) ?: "No road route found to that destination." }
+            loading = false
+        }
+    }
+    fun clearPreview() {
+        previewStop = null
+        routeState = null
+        routeError = null
+        searchResults = null
+        searchError = null
+    }
     val atStop = stop != null && current != null && position.accuracy != null &&
         distanceMeters(current, GeoPoint(stop.latitude, stop.longitude)) + position.accuracy!! < 35.0
     val offRoute = offRouteSamples >= 2
@@ -255,7 +308,7 @@ internal fun DriverNavigationScreen(
 
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         NavigationMap(
-            target = stop, location = current, fix = position.fix, route = route,
+            target = mapTarget, location = current, fix = position.fix, route = route,
             modifier = Modifier.fillMaxSize(), interactive = true, follow = true
         )
 
@@ -271,7 +324,7 @@ internal fun DriverNavigationScreen(
                 }
                 Surface(shape = RoundedCornerShape(MireliDesign.Radius.chip), color = MaterialTheme.colorScheme.surface, shadowElevation = 3.dp) {
                     Text(
-                        stop?.name ?: "Live map",
+                        stop?.name ?: previewStop?.name ?: "Live map",
                         Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
                         style = MaterialTheme.typography.labelLarge, maxLines = 1
                     )
@@ -281,6 +334,90 @@ internal fun DriverNavigationScreen(
                         Text("SIMULATED", Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onTertiaryContainer)
+                    }
+                }
+            }
+            if (stop == null && simulated == null && com.mireli.driver.BuildConfig.DEBUG &&
+                com.mireli.driver.BuildConfig.DRIVER_SERVICE_TEST) {
+                Surface(shape = RoundedCornerShape(MireliDesign.Radius.card), color = MaterialTheme.colorScheme.surface, shadowElevation = 3.dp) {
+                    Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(MireliIcons.LocationOn, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                            androidx.compose.material3.TextField(
+                                value = searchQuery,
+                                onValueChange = { searchQuery = it },
+                                modifier = Modifier.weight(1f),
+                                placeholder = { Text("Search any destination…", style = MaterialTheme.typography.bodyMedium) },
+                                singleLine = true,
+                                colors = androidx.compose.material3.TextFieldDefaults.colors(
+                                    focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+                                    unfocusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+                                    focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                                    unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent
+                                ),
+                                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                                    imeAction = androidx.compose.ui.text.input.ImeAction.Search
+                                ),
+                                keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                                    onSearch = { if (searchQuery.trim().length >= 3) searchDestination(searchQuery) }
+                                )
+                            )
+                            if (previewStop != null || searchQuery.isNotEmpty()) {
+                                IconButton(onClick = {
+                                    searchQuery = ""; clearPreview()
+                                }, modifier = Modifier.size(36.dp)) {
+                                    Icon(MireliIcons.Cancel, "Clear destination", Modifier.size(16.dp))
+                                }
+                            }
+                        }
+                        if (previewStop == null) {
+                            Row(
+                                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                listOf("Mombasa SGR Terminus", "Likoni Ferry", "Moi Airport Mombasa").forEach { hint ->
+                                    androidx.compose.material3.AssistChip(
+                                        onClick = { searchQuery = hint; searchDestination(hint) },
+                                        label = { Text(hint, style = MaterialTheme.typography.labelMedium, maxLines = 1) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                if (searching) LinearProgressIndicator(Modifier.fillMaxWidth())
+                searchError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                searchResults?.let { results ->
+                    Surface(shape = RoundedCornerShape(MireliDesign.Radius.card), color = MaterialTheme.colorScheme.surface, shadowElevation = 4.dp) {
+                        Column {
+                            results.forEachIndexed { index, place ->
+                                if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                                Row(
+                                    Modifier.fillMaxWidth().clickable { previewTo(place) }
+                                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Icon(MireliIcons.LocationOn, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                                    Column(Modifier.weight(1f)) {
+                                        Text(place.name, style = MaterialTheme.typography.titleSmall, maxLines = 1)
+                                        if (place.detail.isNotBlank()) Text(place.detail,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                previewStop?.let { chosen ->
+                    Surface(shape = RoundedCornerShape(MireliDesign.Radius.chip), color = MaterialTheme.colorScheme.secondaryContainer) {
+                        Text(
+                            "Preview route · not a dispatch assignment",
+                            Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
                     }
                 }
             }
@@ -341,7 +478,7 @@ internal fun DriverNavigationScreen(
 
         NavigationSheet(
             modifier = Modifier.align(Alignment.BottomCenter),
-            stop = stop,
+            stop = stop ?: previewStop,
             distance = remainingDistance,
             seconds = remainingTime,
             accuracy = accuracy,
@@ -354,9 +491,10 @@ internal fun DriverNavigationScreen(
             expanded = expanded,
             onToggle = { expanded = !expanded },
             onEnd = onClose,
-            canOpenMaps = stop != null,
+            canOpenMaps = mapTarget != null,
             onOpenMaps = {
-                manualFallback = !DriverNavigation.directions(stop!!).let { url -> url != null && openMaps(context, url) }
+                val target = mapTarget!!
+                manualFallback = !DriverNavigation.directions(target).let { url -> url != null && openMaps(context, url) }
             },
             manualFallback = manualFallback
         )

@@ -51,7 +51,7 @@ class StagingServicesTest {
         rule.onNodeWithText("6-digit verification code").performTextInput(Regex("[0-9]{6}").find(sample)!!.value)
         closeSoftKeyboard()
         rule.onNodeWithText("Verify and continue").performScrollTo().assertIsEnabled().performClick()
-        rule.waitUntil(65000){rule.onAllNodesWithText("Next transfer").fetchSemanticsNodes().isNotEmpty()}
+        rule.waitUntil(65000){rule.onAllNodesWithText("Review & accept").fetchSemanticsNodes().isNotEmpty()}
         screenshot("connected-home")
         val sessions = DriverSessionStore(rule.activity)
         val session = checkNotNull(sessions.load())
@@ -103,14 +103,13 @@ class StagingServicesTest {
         rule.onNodeWithText("6-digit verification code").performTextInput("000000")
         closeSoftKeyboard()
         rule.onNodeWithText("Verify and continue").performScrollTo().assertIsEnabled().performClick()
-        rule.onNodeWithTag("driver_service_list").performScrollToIndex(0)
         rule.waitUntil(30000){rule.onAllNodesWithText("The code is invalid or expired.").fetchSemanticsNodes().isNotEmpty()}
-        reveal("6-digit verification code")
-        rule.onNodeWithText("6-digit verification code").performTextReplacement(code)
+        rule.onNodeWithText("6-digit verification code").performScrollTo().performTextReplacement(code)
         closeSoftKeyboard()
         rule.onNodeWithText("Verify and continue").performScrollTo().assertIsEnabled().performClick()
+        rule.waitUntil(30000){rule.onAllNodesWithText("Continue onboarding").fetchSemanticsNodes().isNotEmpty()}
+        rule.onNodeWithText("Continue onboarding").performClick()
         rule.waitUntil(30000){rule.onAllNodes(hasText("Sign out") and isEnabled()).fetchSemanticsNodes().isNotEmpty()}
-        rule.onNodeWithText("Account",useUnmergedTree=true).performClick()
         awaitAction("Kenyan contact phone")
         reveal("Van")
         rule.onNodeWithText("Van").performClick().assertIsSelected()
@@ -142,6 +141,7 @@ class StagingServicesTest {
         val deletion = runBlocking{api.request("/support",token=session!!.token)}.getJSONArray("cases").getJSONObject(0)
         assertEquals("account", deletion.getString("category"))
         assertTrue(deletion.getString("message").contains("requesting deletion of my Mireli Driver account"))
+        rule.onNodeWithText("Account",useUnmergedTree=true).performClick()
         reveal("Sign out");rule.onNodeWithText("Sign out").performClick()
         rule.waitUntil(30000){rule.onAllNodes(hasTestTag("driver_email_field") and isEnabled()).fetchSemanticsNodes().isNotEmpty()}
         assertNull(DriverSessionStore(rule.activity).load())

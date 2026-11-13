@@ -2,6 +2,7 @@ package com.mireli.driver.ui
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -14,6 +15,7 @@ import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -101,6 +103,61 @@ internal val VerifiedBlue = Color(0xFF1D7AF3)
     }
 }
 
+/**
+ * A coach mark shown once per installation. Long instruction blocks make screens feel
+ * bureaucratic; a single dismissible tip teaches the same thing the first time it matters.
+ */
+@Composable fun DriverTip(key: String, icon: ImageVector, title: String, body: String) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val seen = remember(key) {
+        context.getSharedPreferences("driver_tips", android.content.Context.MODE_PRIVATE)
+            .getBoolean(key, false)
+    }
+    if (seen) return
+    var visible by remember(key) { androidx.compose.runtime.mutableStateOf(true) }
+    if (!visible) return
+    MireliPanel(Modifier.fillMaxWidth()) {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+            Icon(icon, null, tint = MireliDesign.Emerald, modifier = Modifier.size(20.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(title, style = MaterialTheme.typography.titleSmall)
+                Text(body, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(onClick = {
+                    context.getSharedPreferences("driver_tips", android.content.Context.MODE_PRIVATE)
+                        .edit().putBoolean(key, true).apply()
+                    visible = false
+                }, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
+                    Text("Got it")
+                }
+            }
+        }
+    }
+}
+
+/**
+ * A quiet disclosure row: the summary is always visible, the detail opens on demand.
+ * Use it wherever a card previously carried several lines of standing instructions.
+ */
+@Composable fun CollapsibleCard(icon: ImageVector, title: String, summary: String? = null, content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    var open by remember { androidx.compose.runtime.mutableStateOf(false) }
+    MireliPanel(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().clickable { open = !open },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(MireliDesign.Space.xs)
+        ) {
+            Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+            Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            Icon(if (open) MireliIcons.ExpandLess else MireliIcons.ExpandMore, title,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+        }
+        if (summary != null && !open) Text(summary, style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (open) content()
+    }
+}
+
 @Composable fun DriverHeading(title: String, subtitle: String) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(title, style = MaterialTheme.typography.headlineMedium)
@@ -118,7 +175,7 @@ internal val VerifiedBlue = Color(0xFF1D7AF3)
     }
 }
 
-@Composable fun DriverEarningsHero(label: String, amount: Long, detail: String) {
+@Composable fun DriverEarningsHero(label: String, amount: Long, detail: String, hidden: Boolean = false) {
     Column(
         Modifier.fillMaxWidth()
             .clip(RoundedCornerShape(MireliDesign.Radius.hero))
@@ -130,10 +187,32 @@ internal val VerifiedBlue = Color(0xFF1D7AF3)
             Icon(MireliIcons.AccountBalanceWallet, null, tint = StationMint)
             Text(label, color = StationMint, style = MaterialTheme.typography.labelLarge)
         }
-        Text(money(amount), color = Color.White, fontSize = 34.sp, lineHeight = 40.sp,
+        Text(if (hidden) "KSh •••••" else money(amount), color = Color.White, fontSize = 34.sp, lineHeight = 40.sp,
             fontWeight = FontWeight.Bold, letterSpacing = (-1).sp,
             style = MaterialTheme.typography.headlineMedium.copy(fontFeatureSettings = MireliDesign.NumberFeatures))
         Text(detail, color = Color.White.copy(alpha = .9f), style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+/**
+ * The binding in-app privacy summary. It is honest about what the app does and does not
+ * do, and carries the review promise. The signed documents stay linked from Account when
+ * the service provides their HTTPS URLs.
+ */
+@Composable fun DriverPrivacyNotice(onboarding: JSONObject?, supportEmail: String) {
+    CollapsibleCard(MireliIcons.PrivacyTip, "Privacy notice", "What Mireli stores, and your rights — in plain words.") {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Mireli Driver stores your profile and vehicle details, the documents you upload for verification, your assignments, and your settlement statement. Documents live in Mireli's private review service and are used only to verify you — never shown to passengers or the public.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Your device position is used only while the app is open and is sent to Mireli's routing service only when you ask for directions. There is no background tracking between trips.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("You can request deletion of your account from Account → Request account deletion, or write to $supportEmail. Completed applications are reviewed within one day of enrollment.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            onboarding?.optString("policyVersion")?.takeIf { it.isNotBlank() && it != "null" }?.let {
+                Text("Notice version: $it", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
     }
 }
 

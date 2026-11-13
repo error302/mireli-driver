@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
@@ -26,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -96,6 +98,38 @@ private const val EMERALD_LIGHT = "#17B294"
 private const val TICK_MS = 55L
 
 /**
+ * Basemap choices. Auto follows the app theme; the rest are fixed OpenFreeMap styles so the
+ * driver can pick the rendering that reads best in their light conditions.
+ */
+internal enum class MapLayer(val label: String, val styleName: String?) {
+    Auto("Auto", null),
+    Streets("Streets", "liberty"),
+    Daylight("Daylight", "bright"),
+    Minimal("Minimal", "positron"),
+    Night("Night", "dark");
+
+    fun next(): MapLayer = entries[(ordinal + 1) % entries.size]
+
+    companion object {
+        private const val PREF = "map_layer"
+        fun read(prefs: android.content.SharedPreferences): MapLayer =
+            entries.firstOrNull { it.name == prefs.getString(PREF, null) } ?: Auto
+        fun write(prefs: android.content.SharedPreferences, layer: MapLayer) {
+            prefs.edit().putString(PREF, layer.name).apply()
+        }
+    }
+}
+
+/** Resolves the style URL for a layer choice; Auto keeps the theme-following behaviour. */
+internal fun mapLayerUrl(layer: MapLayer, dark: Boolean): String {
+    val name = layer.styleName
+    if (name == null) return mapStyleUrl(dark)
+    val base = BuildConfig.MAP_STYLE_URL
+    val cut = base.lastIndexOf('/')
+    return if (cut <= 0) base else base.substring(0, cut + 1) + name
+}
+
+/**
  * Navigation basemap. The vehicle is a style symbol layer rather than a marker annotation so it can
  * carry a rotating, perspective-correct icon; annotations in this SDK cannot be rotated at all.
  *
@@ -120,11 +154,14 @@ internal fun NavigationMap(
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
     val dark = MaterialTheme.colorScheme.background.luminanceIsDark()
-    val styleUrl = mapStyleUrl(dark)
+    val prefs = remember { context.getSharedPreferences("map", android.content.Context.MODE_PRIVATE) }
+    var layerChoice by remember { mutableStateOf(MapLayer.read(prefs)) }
+    val styleUrl = mapLayerUrl(layerChoice, dark)
 
     var map by remember { mutableStateOf<MapLibreMap?>(null) }
     var style by remember { mutableStateOf<Style?>(null) }
     var loaded by remember { mutableStateOf(false) }
+    var styleVersion by remember { mutableIntStateOf(0) }
     var failed by remember { mutableStateOf(false) }
     var cameraReady by remember { mutableStateOf(false) }
     var following by remember { mutableStateOf(follow) }
@@ -184,19 +221,6 @@ internal fun NavigationMap(
                     followWanted.value = false
                 }
             }
-            ready.setStyle(styleUrl) { loadedStyle ->
-                try {
-                    installLayers(loadedStyle, carIcon, shadowIcon, haloIcon)
-                    style = loadedStyle
-                    loaded = true
-                    failed = false
-                } catch (error: Throwable) {
-                    // Never fail silently again: a swallowed exception here is how the car
-                    // disappeared from the map the first time.
-                    Log.e(TAG, "could not install vehicle layers", error)
-                    failed = true
-                }
-            }
         }
         onDispose {
             owner.lifecycle.removeObserver(observer)
@@ -216,7 +240,31 @@ internal fun NavigationMap(
     } ?: lastHeading
     followWanted.value = follow && following
 
-    LaunchedEffect(map, loaded, target?.id) {
+    // Style loads, initial and on layer switch. installLayers re-applies the vehicle, route and
+    // accuracy layers on the fresh style, and styleVersion restarts the render loop and marker.
+    LaunchedEffect(map, styleUrl) {
+        val ready = map ?: return@LaunchedEffect
+        // Drop the old style reference before the switch: MapLibre invalidates it, and the render
+        // loop must not touch it while the new style loads.
+        loaded = false
+        style = null
+        ready.setStyle(styleUrl) { loadedStyle ->
+            try {
+                installLayers(loadedStyle, carIcon, shadowIcon, haloIcon)
+                style = loadedStyle
+                loaded = true
+                styleVersion++
+                failed = false
+            } catch (error: Throwable) {
+                // Never fail silently again: a swallowed exception here is how the car
+                // disappeared from the map the first time.
+                Log.e(TAG, "could not install vehicle layers", error)
+                failed = true
+            }
+        }
+    }
+
+    LaunchedEffect(map, loaded, styleVersion, target?.id) {
         val ready = map?.takeIf { loaded } ?: return@LaunchedEffect
         targetMarker?.let { runCatching { ready.removeAnnotation(it) } }
         targetMarker = null
@@ -228,7 +276,7 @@ internal fun NavigationMap(
     }
 
     // One loop for vehicle motion, rotation, accuracy and the follow camera.
-    LaunchedEffect(map, loaded) {
+    LaunchedEffect(map, loaded, styleVersion) {
         if (!loaded) return@LaunchedEffect
         val ready = map ?: return@LaunchedEffect
         var shown: GeoPoint? = null
@@ -238,7 +286,10 @@ internal fun NavigationMap(
         var lastRouteRef: DriverRoute? = null
         while (true) {
             val goal = latestPoint.value
-            val layer = style?.getLayerAs<SymbolLayer>(CAR_LAYER_ID)
+            // A style switch invalidates the previous Style object before the new one finishes
+            // loading, and getLayerAs throws on a stale style. Treat that as "no layer yet"
+            // rather than letting it kill the app mid-drive.
+            val layer = runCatching { style?.getLayerAs<SymbolLayer>(CAR_LAYER_ID) }.getOrNull()
             if (goal == null) {
                 layer?.setProperties(PropertyFactory.iconOpacity(0.4f))
                 delay(200)
@@ -335,6 +386,25 @@ internal fun NavigationMap(
                     }) { Icon(MireliIcons.Compass, "Recentre and align to my heading") }
                 }
                 if (interactive) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surface,
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+                        shadowElevation = 2.dp,
+                        onClick = {
+                            val next = layerChoice.next()
+                            layerChoice = next
+                            MapLayer.write(prefs, next)
+                        }
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(MireliIcons.Map, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                            Text(layerChoice.label, style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
                     Surface(color = MaterialTheme.colorScheme.surface, shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp), shadowElevation = 2.dp) {
                         Column {
                             MapZoomButton("+") { map?.animateCamera(CameraUpdateFactory.zoomIn()) }

@@ -1,6 +1,5 @@
 package com.mireli.driver.ui
 
-import android.content.Context
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -16,9 +15,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -28,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import com.mireli.driver.R
 import com.mireli.driver.domain.DriverNavigation
 import com.mireli.driver.domain.NavigationStop
+import com.mireli.driver.domain.SgrTimetable
 import kotlinx.coroutines.delay
 import org.json.JSONObject
 import java.time.Duration
@@ -172,41 +169,45 @@ private fun DriverAvatar(name: String?, size: Dp = 44.dp) {
 /** Home top bar: the original Mireli logo, product line and the support bell. */
 @Composable
 internal fun DriverHomeTopBar(onSupport: () -> Unit) {
-    // Same navy-to-teal block as sign-in, so the app opens on the surface the driver just signed into.
+    // No card, no gradient block: the header sits directly on the body surface, and the
+    // blue-green brand arrives through the logo ring, the title and the support action.
     Row(
-        Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(MireliDesign.Radius.hero))
-            .background(Brush.linearGradient(PremiumGradient))
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+        Modifier.fillMaxWidth().padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // The original logo has a white canvas. Keep that canvas in both themes.
-        Surface(shape = RoundedCornerShape(MireliDesign.Radius.tile), color = Color.White) {
-            Image(painterResource(R.drawable.mireli_driver_logo), "Mireli original logo",
-                Modifier.size(40.dp))
+        Box(
+            Modifier.size(46.dp).clip(RoundedCornerShape(MireliDesign.Radius.tile))
+                .background(Brush.linearGradient(PremiumGradient)).padding(2.dp)
+        ) {
+            // The original logo has a white canvas. Keep that canvas in both themes.
+            Surface(shape = RoundedCornerShape(MireliDesign.Radius.tile - 2.dp), color = Color.White) {
+                Image(painterResource(R.drawable.mireli_driver_logo), "Mireli original logo",
+                    Modifier.fillMaxSize())
+            }
         }
         Spacer(Modifier.width(MireliDesign.Space.sm))
         Column(Modifier.weight(1f)) {
-            Text("Mireli Driver", style = MaterialTheme.typography.titleMedium, color = Color.White)
-            Text("SGR last-mile · Mombasa", style = MaterialTheme.typography.labelMedium,
-                color = StationMint)
+            Text("Mireli Driver", style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+            Text("Mombasa SGR transfers", style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.secondary)
         }
-        ThemeIconButton(tint = Color.White)
+        ThemeIconButton(tint = MaterialTheme.colorScheme.onSurfaceVariant)
         IconButton(onClick = onSupport) {
-            Icon(MireliIcons.HeadsetMic, "Help and support", tint = Color.White)
+            Icon(MireliIcons.HeadsetMic, "Help and support", tint = MaterialTheme.colorScheme.secondary)
         }
     }
 }
 
 @Composable
-private fun Greeting(name: String?, online: Boolean, verified: Boolean, onOnlineChange: (Boolean) -> Unit) {
+private fun Greeting(name: String?, verified: Boolean) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(MireliDesign.Space.sm)) {
         DriverAvatar(name)
         Column(Modifier.weight(1f)) {
             Text(
-                "Good ${partOfDay()}".uppercase(),
-                style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp),
+                "Good ${partOfDay()}",
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Row(verticalAlignment = Alignment.CenterVertically,
@@ -217,7 +218,6 @@ private fun Greeting(name: String?, online: Boolean, verified: Boolean, onOnline
                 if (verified) VerifiedBadge(verified = true, compact = true)
             }
         }
-        AvailabilityPill(online, onOnlineChange)
     }
 }
 
@@ -231,158 +231,198 @@ private fun partOfDay(): String {
 }
 
 @Composable
-private fun AvailabilityPill(online: Boolean, onChange: (Boolean) -> Unit) {
-    val colors = MaterialTheme.colorScheme
-    Row(
-        Modifier
-            .clip(RoundedCornerShape(MireliDesign.Radius.chip))
-            .background(if (online) colors.primaryContainer else colors.surfaceVariant)
-            .clickable { onChange(!online) }
-            .padding(start = 12.dp, end = 12.dp, top = 7.dp, bottom = 7.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
+private fun ApplicationPanel(status: String?, onOpenAccount: () -> Unit, onRefresh: () -> Unit) {
+    val title = when (status) {
+        "draft" -> "Complete your application"
+        "submitted" -> "Application in review"
+        "changes_requested" -> "Changes requested"
+        "approved" -> "Check your driver documents"
+        "suspended" -> "Driver account suspended"
+        else -> "Check application status"
+    }
+    val detail = when (status) {
+        "draft" -> "Save your driver and vehicle details, upload the required documents, then submit for review."
+        "submitted" -> "Mireli is reviewing your documents. Check your application for updates."
+        "changes_requested" -> "Read the reviewer’s feedback, update your documents and submit again."
+        "approved" -> "Open your application to check which documents need attention before you can take transfers."
+        "suspended" -> "Open your account for details or contact Mireli support."
+        else -> "Refresh to load your application and see what to do next."
+    }
+    Surface(
+        Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.primaryContainer,
+        shape = RoundedCornerShape(MireliDesign.Radius.hero)
     ) {
-        Box(
-            Modifier.size(8.dp).clip(CircleShape)
-                .background(if (online) colors.primary else colors.onSurfaceVariant)
-        )
-        Text(
-            if (online) "Available" else "Offline",
-            style = MaterialTheme.typography.labelLarge,
-            color = if (online) colors.onPrimaryContainer else colors.onSurfaceVariant
-        )
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Icon(MireliIcons.VerifiedUser, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+            Text(title, style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer)
+            Text(detail, style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer)
+            MireliPrimaryButton(
+                onClick = if (status == null) onRefresh else onOpenAccount,
+                enabled = true,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(when (status) {
+                    null -> "Refresh account"
+                    "draft" -> "Continue onboarding"
+                    else -> "View application"
+                })
+            }
+        }
     }
 }
 
+/**
+ * The main feature of Home: the next assignment, with the accept action one tap away.
+ * Earnings deliberately live on the Earnings tab, not here.
+ */
 @Composable
-private fun EarningsCard(netMinor: Long?, pendingMinor: Long?, completedTrips: Int, onOpen: () -> Unit) {
+private fun NextTransferCard(
+    trip: JSONObject,
+    now: Instant,
+    stop: NavigationStop?,
+    onStartNavigation: (String, NavigationStop) -> Unit,
+    onOpenTrip: (String) -> Unit
+) {
+    val tripId = trip.optString("id")
+    val departure = trip.departureInstant()
+    val phase = trip.optString("phase")
     Column(
         Modifier.fillMaxWidth()
             .clip(RoundedCornerShape(MireliDesign.Radius.hero))
             .background(Brush.linearGradient(PremiumGradient))
-            .clickable(onClick = onOpen)
-            .padding(MireliDesign.Space.md),
-        verticalArrangement = Arrangement.spacedBy(MireliDesign.Space.xs)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Icon(MireliIcons.AccountBalanceWallet, null, tint = StationMint,
-                modifier = Modifier.size(18.dp))
-            Text("Confirmed earnings", style = MaterialTheme.typography.labelMedium,
-                color = StationMint, modifier = Modifier.weight(1f))
-            Icon(MireliIcons.ChevronRight, "Earnings and payouts",
-                tint = Color.White.copy(alpha = .85f), modifier = Modifier.size(18.dp))
-        }
-        // "KSh" is a unit, not the number: it sits on the baseline at label size so the amount
-        // keeps the display weight and the currency does not shout alongside it.
-        val amount = netMinor?.let(::money)
-        Row {
-            if (amount != null && amount.startsWith("KSh ")) {
-                Text(
-                    "KSh",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = Color.White.copy(alpha = .8f),
-                    modifier = Modifier.alignByBaseline().padding(end = 6.dp)
-                )
-                Text(
-                    amount.removePrefix("KSh "),
-                    style = MaterialTheme.typography.displaySmall,
-                    color = Color.White,
-                    modifier = Modifier.alignByBaseline()
-                )
-            } else {
-                Text(
-                    amount ?: "—",
-                    style = MaterialTheme.typography.displaySmall,
-                    color = Color.White,
-                    modifier = Modifier.alignByBaseline()
-                )
-            }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(MireliIcons.Ticket, null, tint = Color.White.copy(alpha = .8f),
-                modifier = Modifier.size(14.dp))
-            Text(
-                buildString {
-                    append("$completedTrips completed ")
-                    append(if (completedTrips == 1) "journey" else "journeys")
-                    if (pendingMinor != null && pendingMinor > 0) append(" · ${money(pendingMinor)} pending")
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = .9f)
-            )
-        }
-    }
-}
-
-@Composable
-private fun NextTrainHero(
-    trip: JSONObject?,
-    now: Instant,
-    station: String,
-    onNavigate: (() -> Unit)?,
-    onOpenTrains: () -> Unit
-) {
-    val departure = trip?.departureInstant()
-    val clock = departure?.let(ClockFormat::format)
-    val urgent = urgency(now, departure) == Urgency.Now
-    val colors = MaterialTheme.colorScheme
-    // The hero stays the premium navy-to-teal block in both themes, so the brand reads the same
-    // as the sign-in hero the driver just came through.
-    val gradient = PremiumGradient
-    val onSecondary = Color.White
-    Column(
-        Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(MireliDesign.Radius.hero))
-            .background(Brush.linearGradient(gradient))
-            .clickable(onClick = onOpenTrains)
+            .clickable { onOpenTrip(tripId) }
             .padding(MireliDesign.Space.md),
         verticalArrangement = Arrangement.spacedBy(MireliDesign.Space.sm)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Icon(MireliIcons.TrainFront, null, tint = onSecondary, modifier = Modifier.size(20.dp))
+            Icon(MireliIcons.CarFront, null, tint = StationMint, modifier = Modifier.size(18.dp))
             Text(
-                if (clock == null) "Next SGR train" else "Next SGR train · $clock",
+                when (phase) {
+                    "assigned" -> "New transfer · review now"
+                    "accepted" -> "Accepted transfer"
+                    "at_pickup" -> "Pick up your passengers"
+                    else -> "Journey in progress"
+                },
                 style = MaterialTheme.typography.labelMedium.copy(letterSpacing = .6.sp),
-                color = onSecondary.copy(alpha = .8f)
+                color = StationMint, modifier = Modifier.weight(1f)
             )
-        }
-        Text(
-            if (departure == null) "No train linked yet" else "Departs ${countdown(now, departure)}",
-            style = MaterialTheme.typography.headlineSmall,
-            color = onSecondary
-        )
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Icon(MireliIcons.Train, null, tint = onSecondary.copy(alpha = .8f), modifier = Modifier.size(16.dp))
-            Text(station, style = MaterialTheme.typography.bodyMedium,
-                color = onSecondary.copy(alpha = .9f), modifier = Modifier.weight(1f, false))
-            if (trip != null) {
-                Surface(
-                    shape = RoundedCornerShape(MireliDesign.Radius.chip),
-                    color = if (urgent) MaterialTheme.colorScheme.tertiaryContainer else Color.White.copy(alpha = .18f)
-                ) {
-                    Text(
-                        "${trip.partySeats()} pax",
-                        Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (urgent) MaterialTheme.colorScheme.onTertiaryContainer else onSecondary
-                    )
-                }
+            Surface(
+                shape = RoundedCornerShape(MireliDesign.Radius.chip),
+                color = Color.White.copy(alpha = .18f)
+            ) {
+                Text(
+                    "${trip.partySeats()} pax",
+                    Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                    style = MaterialTheme.typography.labelSmall, color = Color.White
+                )
             }
         }
-        if (onNavigate != null) {
+        Text(
+            trip.terminusName() ?: "SGR transfer",
+            style = MaterialTheme.typography.headlineSmall, color = Color.White,
+            maxLines = 1, overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            buildString {
+                if (departure != null) append("Departs ${ClockFormat.format(departure)} EAT · ${countdown(now, departure)}")
+                else append("Departure time pending")
+                append(" · ${trip.parties().size} request")
+                if (trip.parties().size != 1) append("s")
+            },
+            style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = .9f)
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
-                onClick = onNavigate,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                onClick = { onOpenTrip(tripId) },
+                modifier = Modifier.weight(1f).heightIn(min = 52.dp),
                 shape = RoundedCornerShape(MireliDesign.Radius.tile),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.surface,
                     contentColor = MaterialTheme.colorScheme.primary
                 )
             ) {
-                Icon(MireliIcons.NavArrow, null, Modifier.size(18.dp))
+                Icon(if (phase == "assigned") MireliIcons.CheckCircleOutline else MireliIcons.NavArrow,
+                    null, Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Navigate to station", fontWeight = FontWeight.SemiBold)
+                Text(if (phase == "assigned") "Review & accept" else "Open transfer",
+                    fontWeight = FontWeight.SemiBold)
             }
+            if (stop != null && phase != "in_progress") {
+                OutlinedButton(
+                    onClick = { onStartNavigation(tripId, stop) },
+                    modifier = Modifier.weight(1f).heightIn(min = 52.dp),
+                    shape = RoundedCornerShape(MireliDesign.Radius.tile),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                ) {
+                    Icon(MireliIcons.NavArrow, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Navigate", fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+    }
+}
+
+/** Compact published-timetable awareness, shown when nothing is assigned. */
+@Composable
+private fun SgrTodayPanel(now: Instant) {
+    val events = remember(now.toEpochMilli() / 60_000L) { SgrTimetable.upcoming(now) }
+    var open by rememberSaveable { mutableStateOf(false) }
+    MireliPanel(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().clickable { open = !open },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(MireliDesign.Space.xs)
+        ) {
+            Icon(MireliIcons.TrainFront, null, tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp))
+            Text("SGR today · Mombasa Terminus", style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.weight(1f))
+            Icon(if (open) MireliIcons.ExpandLess else MireliIcons.ExpandMore, "SGR timetable",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+        }
+        val next = events.firstOrNull()
+        if (next != null) {
+            Text(
+                "${next.kind} at ${next.clock} EAT · ${next.service.label}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (open) {
+            events.forEach { event ->
+                val minutes = Duration.between(now, event.at).toMinutes()
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(MireliDesign.Space.sm)
+                ) {
+                    Text(
+                        event.clock,
+                        style = MaterialTheme.typography.titleMedium
+                            .copy(fontFeatureSettings = MireliDesign.NumberFeatures),
+                        color = if (minutes <= 15) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurface
+                    )
+                    MireliStatusChip(
+                        event.kind,
+                        if (minutes <= 15) ChipTone.Alert else ChipTone.Positive
+                    )
+                    Text(
+                        event.service.label,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            Text(
+                "Published Madaraka Express timetable. Confirm with Kenya Railways; your dispatch assignment stays authoritative.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
@@ -529,7 +569,7 @@ private fun LivePositionCard(onOpenMap: () -> Unit) {
                 }
             }
             Text(
-                "Your device position, used only while the app is open. It is sent to Mireli's routing service when you ask for directions.",
+                "Location can be shared with Mireli during an assigned transfer.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -537,200 +577,72 @@ private fun LivePositionCard(onOpenMap: () -> Unit) {
     }
 }
 
-/** Plain answer to "where do my passengers come from?", in the order a transfer happens. */
-@Composable
-private fun HowItWorksPanel() {
-    var open by rememberSaveable { mutableStateOf(false) }
-    MireliPanel(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier.fillMaxWidth().clickable { open = !open },
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(MireliDesign.Space.xs)
-        ) {
-            Icon(MireliIcons.Ticket, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-            Text("How you get passengers", style = MaterialTheme.typography.titleSmall,
-                modifier = Modifier.weight(1f))
-            Icon(if (open) MireliIcons.ExpandLess else MireliIcons.ExpandMore, "How you get passengers",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
-        }
-        Text(
-            "Mireli dispatch assigns you the passengers arriving on an SGR service. You never wait for a street hail.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        if (open) {
-            HowStep("1", MireliIcons.Train, "Dispatch sends the transfer",
-                "When a train with Mireli passengers is due, the trip appears under Trips with its station and scheduled time.")
-            HowStep("2", MireliIcons.Route, "You accept and drive to the terminus",
-                "Open the trip for the pickup point, then navigate there.")
-            HowStep("3", MireliIcons.Groups, "You meet and board each party",
-                "Confirm pickup, board the passengers and record anyone who does not show.")
-            HowStep("4", MireliIcons.AccountBalanceWallet, "You complete and get paid",
-                "Finished journeys appear in Earnings and settle to the M-Pesa number on your account.")
-        }
-    }
-}
-
-@Composable
-private fun HowStep(number: String, icon: ImageVector, title: String, detail: String) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(MireliDesign.Space.sm)) {
-        Box(
-            Modifier.size(28.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(number, style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer)
-        }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
-                Text(title, style = MaterialTheme.typography.titleSmall)
-            }
-            Text(detail, style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
-@Composable
-private fun StationActions(
-    onOpenTrains: () -> Unit,
-    onOpenTrips: () -> Unit,
-    onOpenEarnings: () -> Unit,
-    onOpenAccount: () -> Unit
-) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(MireliDesign.Space.sm)) {
-        QuickTile("Arrivals", MireliIcons.TrainFront, 0, onOpenTrains, Modifier.weight(1f))
-        QuickTile("My trips", MireliIcons.CarFront, 1, onOpenTrips, Modifier.weight(1f))
-        QuickTile("Earnings", MireliIcons.ChartBars, 2, onOpenEarnings, Modifier.weight(1f))
-        QuickTile("Account", MireliIcons.PersonOutline, 3, onOpenAccount, Modifier.weight(1f))
-    }
-}
-
-@Composable
-private fun QuickTile(label: String, icon: ImageVector, index: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-    Column(
-        modifier
-            .staggerIn(index)
-            .pressScale(interaction)
-            .clip(RoundedCornerShape(MireliDesign.Radius.card))
-            .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(MireliDesign.Radius.card))
-            .clickable(
-                interactionSource = interaction,
-                indication = androidx.compose.foundation.LocalIndication.current,
-                onClick = onClick
-            )
-            .heightIn(min = 84.dp)
-            .padding(vertical = MireliDesign.Space.sm, horizontal = MireliDesign.Space.sm),
-        verticalArrangement = Arrangement.spacedBy(MireliDesign.Space.xs, Alignment.CenterVertically)
-    ) {
-        Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
-        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface)
-    }
-}
-
-/**
- * Driver home. Everything is derived from the driver's own assignments and settlement
- * statement; nothing invents a live train position or a payable balance.
- */
 @Composable
 internal fun DriverHomeDashboard(
     name: String?,
     eligible: Boolean,
+    verified: Boolean,
+    applicationStatus: String?,
+    tripsCurrent: Boolean,
     trips: List<JSONObject>?,
-    earnings: JSONObject?,
     activeNavigation: (@Composable () -> Unit)?,
+    onRefresh: () -> Unit,
     onOpenTrips: () -> Unit,
-    onOpenTrains: () -> Unit,
-    onOpenEarnings: () -> Unit,
     onOpenAccount: () -> Unit,
     onOpenTrip: (String) -> Unit,
     onStartNavigation: (String, NavigationStop) -> Unit,
     onOpenMap: () -> Unit
 ) {
-    val context = LocalContext.current
-    val now = rememberNow()
-    val nextTrip = remember(trips) {
-        val active = trips.orEmpty().filter { it.isActiveTransfer() }.sortedWith(transferOrder())
-        active.firstOrNull { (it.departureInstant() ?: Instant.MAX).isAfter(Instant.now().minusSeconds(15 * 60)) }
-            ?: active.firstOrNull()
-    }
-    val completed = remember(trips) { trips.orEmpty().count { it.optString("phase") == "completed" } }
-    val net = remember(earnings) {
-        val totals = earnings?.optJSONArray("totals") ?: return@remember null
-        val paid = (0 until totals.length()).mapNotNull(totals::optJSONObject)
-            .filter { it.optString("status") == "completed" }
-        if (paid.isEmpty()) null else paid.sumOf { it.optLong("netMinor", 0L) }
-    }
-    val pending = remember(earnings) {
-        val totals = earnings?.optJSONArray("totals") ?: return@remember null
-        val open = (0 until totals.length()).mapNotNull(totals::optJSONObject)
-            .filter { it.optString("status") != "completed" }
-            .sumOf { it.optLong("netMinor", 0L) }
-        if (open > 0) open else null
-    }
-    val station = nextTrip?.terminusName() ?: "Mombasa Terminus"
-    val stationStop = nextTrip?.navigationStops()?.firstOrNull { it.name == station && it.valid }
-    var online by rememberSaveable {
-        mutableStateOf(context.getSharedPreferences("availability", Context.MODE_PRIVATE).getBoolean("available", false))
-    }
-    LaunchedEffect(online) {
-        context.getSharedPreferences("availability", Context.MODE_PRIVATE)
-            .edit().putBoolean("available", online).apply()
-    }
-
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(MireliDesign.Space.md)) {
-        Greeting(name, online && eligible, eligible) { requested ->
-            online = requested
-            if (!eligible) onOpenAccount()
-        }
-        LivePositionCard(onOpenMap)
-        EarningsCard(net, pending, completed, onOpenEarnings)
-        NextTrainHero(
-            trip = nextTrip,
-            now = now,
-            station = station,
-            onNavigate = stationStop?.let { stop ->
-                { nextTrip?.optString("id")?.takeIf { it.isNotBlank() }?.let { onStartNavigation(it, stop) } }
-            },
-            onOpenTrains = onOpenTrains
-        )
-        activeNavigation?.invoke()
-        HowItWorksPanel()
+        Greeting(name, verified)
         if (!eligible) {
-            MireliPanel(Modifier.fillMaxWidth()) {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
-                    Icon(MireliIcons.VerifiedUser, null, tint = MaterialTheme.colorScheme.tertiary)
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Approval needed before you can accept transfers",
-                            style = MaterialTheme.typography.titleSmall)
-                        Text("Upload your driver and vehicle documents for compliance review. Until then you can review schedules and trips but cannot board passengers.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        TextButton(onClick = onOpenAccount, contentPadding = PaddingValues(0.dp)) {
-                            Text("Open my documents")
-                        }
+            ApplicationPanel(applicationStatus, onOpenAccount, onRefresh)
+            return@Column
+        }
+
+        val now = rememberNow()
+        val currentTrips = trips.orEmpty().takeIf { tripsCurrent }.orEmpty()
+        val nextTrip = remember(currentTrips) {
+            currentTrips.filter { it.isActiveTransfer() }.minWithOrNull(transferOrder())
+        }
+        if (nextTrip != null) {
+            val stops = nextTrip.navigationStops()
+            val stationStop = stops.firstOrNull { it.valid && it.name == nextTrip.terminusName() }
+                ?: stops.firstOrNull { it.valid }
+            NextTransferCard(nextTrip, now, stationStop, onStartNavigation, onOpenTrip)
+            activeNavigation?.invoke()
+            if (currentTrips.any { it.isActiveTransfer() && it.parties().isNotEmpty() }) {
+                PickupQueue(
+                    trips = currentTrips,
+                    emptyText = "Passenger groups will appear here when a pickup is due.",
+                    onOpenTrips = onOpenTrips,
+                    onOpenTrip = onOpenTrip
+                )
+            }
+        } else if (tripsCurrent) {
+            Surface(
+                Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(MireliDesign.Radius.hero),
+                color = StationNavy
+            ) {
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Driver approved", Modifier.weight(1f), color = StationMint,
+                            style = MaterialTheme.typography.labelLarge)
+                        StationLines(Modifier.size(78.dp, 32.dp))
                     }
+                    Text("No transfers assigned", style = MaterialTheme.typography.headlineSmall,
+                        color = Color.White)
+                    Text("Your next scheduled transfer will appear here when Mireli assigns it.",
+                        style = MaterialTheme.typography.bodyMedium, color = Color.White)
+                    TextButton(onClick = onOpenTrips, colors = ButtonDefaults.textButtonColors(
+                        contentColor = StationMint
+                    )) { Text("View trips") }
                 }
             }
         }
-        PickupQueue(
-            trips = trips.orEmpty(),
-            emptyText = if (nextTrip == null)
-                "No passengers waiting. Accepted pickup requests appear here with the train they arrive on."
-            else "Every request on this transfer is already on board or closed.",
-            onOpenTrips = onOpenTrips,
-            onOpenTrip = onOpenTrip
-        )
-        StationActions(onOpenTrains, onOpenTrips, onOpenEarnings, onOpenAccount)
-        Text(
-            "Location and arrival times come from your dispatch assignments. Train times are scheduled departures, not live railway telemetry.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 2.dp, vertical = 4.dp)
-        )
+        SgrTodayPanel(now)
+        LivePositionCard(onOpenMap)
     }
 }
 

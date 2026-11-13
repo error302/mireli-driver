@@ -27,14 +27,16 @@ class ConnectedDriverTest {
         assertFalse(DriverServiceException(429, "limited", "RATE_LIMITED", true).tripActionRejected)
     }
 
-    @Test fun connectedUploadAcceptsTheExactLimitAndRejectsOversizedOrMismatchedContent() {
+    @Test fun connectedUploadUsesTheFileSignatureAndRejectsOversizedOrUnknownContent() {
         val pdf = "%PDF-1.4\nSynthetic test\n%%EOF".toByteArray()
-        assertArrayEquals(pdf, OnboardingStore.readDocument("application/pdf", pdf.inputStream(), pdf.size))
+        val (mime, bytes) = OnboardingStore.readDocument("image/png", pdf.inputStream(), pdf.size)
+        assertEquals("application/pdf", mime)
+        assertArrayEquals(pdf, bytes)
         assertThrows(IllegalArgumentException::class.java) {
             OnboardingStore.readDocument("application/pdf", pdf.inputStream(), pdf.size - 1)
         }
         assertThrows(IllegalArgumentException::class.java) {
-            OnboardingStore.readDocument("image/png", pdf.inputStream(), pdf.size)
+            OnboardingStore.readDocument("application/pdf", "Unknown content".byteInputStream(), pdf.size)
         }
     }
 }

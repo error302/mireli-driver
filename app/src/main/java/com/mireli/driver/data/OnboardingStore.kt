@@ -1,6 +1,7 @@
 package com.mireli.driver.data
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
@@ -77,10 +78,10 @@ class OnboardingStore(private val context: Context) {
         return importDocument(mime, input)
     }
     internal fun importDocument(mime: String, input: InputStream): DocumentEvidence {
-        val bytes = readDocument(mime, input, MAX_BYTES)
+        val (resolvedMime, bytes) = readDocument(mime, input, MAX_BYTES)
         val id = UUID.randomUUID().toString()
         encrypt(File(directory, "$id.enc"), bytes)
-        return DocumentEvidence(id, mime, bytes.size, attachedAt = Instant.now().toString())
+        return DocumentEvidence(id, resolvedMime, bytes.size, attachedAt = Instant.now().toString())
     }
     fun remove(item: DocumentEvidence) {
         require(Regex("[0-9a-f-]{36}").matches(item.storageId))
@@ -104,9 +105,18 @@ class OnboardingStore(private val context: Context) {
         const val MAX_BYTES = 10 * 1024 * 1024
         private val supportedTypes = setOf("application/pdf", "image/jpeg", "image/png")
 
+        /** What the bytes actually are. Providers often mislabel photos, so the signature wins. */
+        internal fun sniffMime(bytes: ByteArray): String? = when {
+            bytes.size >= 5 && bytes.take(5).toByteArray().toString(Charsets.US_ASCII) == "%PDF-" -> "application/pdf"
+            bytes.size >= 3 && bytes[0] == 0xff.toByte() && bytes[1] == 0xd8.toByte() && bytes[2] == 0xff.toByte() -> "image/jpeg"
+            bytes.size >= 8 && bytes.take(8).toByteArray().contentEquals(
+                byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47, 13, 10, 26, 10)) -> "image/png"
+            else -> null
+        }
+
         private fun openDocument(context: Context, uri: Uri): Pair<String, InputStream> {
             val mime = context.contentResolver.getType(uri)
-            require(mime != null && mime in supportedTypes) { "Choose a PDF, JPEG or PNG file." }
+            require(mime != null && (mime in supportedTypes || mime.startsWith("image/"))) { "Choose a PDF or photo of the document." }
             val input = context.contentResolver.openInputStream(uri)
                 ?: throw IllegalArgumentException("The selected document could not be opened.")
             return mime to input
@@ -117,10 +127,10 @@ class OnboardingStore(private val context: Context) {
             val maxBytes = serverLimit.coerceAtMost(MAX_BYTES)
             require(maxBytes > 0) { "Document uploads are currently unavailable." }
             val (mime, input) = openDocument(context, uri)
-            return mime to readDocument(mime, input, maxBytes)
+            return readDocument(mime, input, maxBytes)
         }
 
-        internal fun readDocument(mime: String, input: InputStream, maxBytes: Int): ByteArray = input.use {
+        internal fun readDocument(declaredMime: String, input: InputStream, maxBytes: Int): Pair<String, ByteArray> = input.use {
             val output = ByteArrayOutputStream()
             val buffer = ByteArray(8192)
             while (true) {
@@ -129,16 +139,64 @@ class OnboardingStore(private val context: Context) {
                 require(read <= maxBytes - output.size()) { "Choose a smaller document. The file exceeds the upload limit." }
                 output.write(buffer, 0, read)
             }
-            val bytes = output.toByteArray()
-            require(validSignature(mime, bytes)) { "The file content does not match its document type." }
-            bytes
+            resolveUpload(declaredMime, output.toByteArray(), maxBytes)
         }
 
-        fun validSignature(mime: String, bytes: ByteArray): Boolean = when (mime) {
-            "application/pdf" -> bytes.size >= 5 && bytes.take(5).toByteArray().toString(Charsets.US_ASCII) == "%PDF-"
-            "image/jpeg" -> bytes.size >= 3 && bytes[0] == 0xff.toByte() && bytes[1] == 0xd8.toByte() && bytes[2] == 0xff.toByte()
-            "image/png" -> bytes.size >= 8 && bytes.take(8).toByteArray().contentEquals(byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47, 13, 10, 26, 10))
-            else -> false
+        /**
+         * The bytes decide the document type, because file providers frequently mislabel camera
+         * photos. Anything else that still declares itself an image is decoded and re-encoded as
+         * JPEG, which is what phones produce for photographs of documents today.
+         */
+        internal fun resolveUpload(declaredMime: String, bytes: ByteArray, maxBytes: Int): Pair<String, ByteArray> {
+            val sniffed = sniffMime(bytes)
+            if (sniffed != null) return sniffed to bytes
+            if (declaredMime.startsWith("image/")) {
+                val jpeg = convertToJpeg(bytes)
+                    ?: throw IllegalArgumentException("This photo format is not supported. Set your camera to JPEG or attach a PDF.")
+                require(jpeg.size <= maxBytes) { "Choose a smaller document. The file exceeds the upload limit." }
+                return "image/jpeg" to jpeg
+            }
+            throw IllegalArgumentException("Choose a PDF or photo of the document.")
         }
+
+        private fun convertToJpeg(raw: ByteArray): ByteArray? {
+            val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.size, options)
+            if (options.outWidth <= 0 || options.outHeight <= 0) return null
+            options.inSampleSize = 1
+            while (maxOf(options.outWidth, options.outHeight) / options.inSampleSize > 3_000) {
+                options.inSampleSize *= 2
+            }
+            options.inJustDecodeBounds = false
+            val decoded = android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.size, options) ?: return null
+            val oriented = applyExifOrientation(raw, decoded)
+            val flat = if (oriented.config == Bitmap.Config.ARGB_8888 && oriented.hasAlpha()) {
+                val canvas = Bitmap.createBitmap(oriented.width, oriented.height, Bitmap.Config.ARGB_8888)
+                val painter = android.graphics.Paint(0)
+                canvas.eraseColor(android.graphics.Color.WHITE)
+                android.graphics.Canvas(canvas).drawBitmap(oriented, 0f, 0f, painter)
+                canvas
+            } else oriented
+            val output = ByteArrayOutputStream()
+            return if (flat.compress(Bitmap.CompressFormat.JPEG, 92, output)) output.toByteArray() else null
+        }
+
+        private fun applyExifOrientation(raw: ByteArray, decoded: Bitmap): Bitmap {
+            val orientation = runCatching {
+                androidx.exifinterface.media.ExifInterface(java.io.ByteArrayInputStream(raw))
+                    .getAttributeInt(androidx.exifinterface.media.ExifInterface.TAG_ORIENTATION, 1)
+            }.getOrDefault(1)
+            val degrees = when (orientation) {
+                androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+                androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+                androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+                else -> 0f
+            }
+            if (degrees == 0f) return decoded
+            val matrix = android.graphics.Matrix().apply { postRotate(degrees) }
+            return Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true)
+        }
+
+        fun validSignature(mime: String, bytes: ByteArray): Boolean = sniffMime(bytes) == mime
     }
 }
