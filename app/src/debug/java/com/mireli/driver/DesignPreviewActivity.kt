@@ -152,7 +152,8 @@ private fun DesignPreview() {
                         onOpenAccount = { },
                         onOpenTrip = { tab = 2 },
                         onStartNavigation = { _, stop -> navStop = stop },
-                        onOpenMap = { mapOnly = true }
+                        onOpenMap = { mapOnly = true },
+                        onOpenEarnings = { }
                     )
                 }
                 1 -> item {

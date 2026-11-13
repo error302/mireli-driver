@@ -13,8 +13,18 @@ data class RouteManeuver(val instruction:String,val distanceMeters:Int,val durat
 data class DriverRoute(val geometry:List<GeoPoint>,val distanceMeters:Int,val durationSeconds:Int,val maneuvers:List<RouteManeuver>) {
     companion object {
         fun fromJson(json:JSONObject):DriverRoute {
-            require(json.optString("provider")=="valhalla")
-            val geometry=decodePolyline6(json.getString("geometry"))
+            val geometry = when (json.optString("provider")) {
+                "valhalla" -> decodePolyline6(json.getString("geometry"))
+                "amazon-location" -> {
+                    val points = json.getJSONArray("points")
+                    require(points.length() in 2..16_000)
+                    List(points.length()) { index ->
+                        val point = points.getJSONArray(index)
+                        GeoPoint(point.getDouble(1), point.getDouble(0)).also { require(it.valid) }
+                    }
+                }
+                else -> error("Unknown route provider")
+            }
             require(geometry.size>=2)
             val raw=json.getJSONArray("maneuvers")
             require(raw.length() in 1..120)

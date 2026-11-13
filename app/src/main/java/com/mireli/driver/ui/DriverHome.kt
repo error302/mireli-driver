@@ -204,10 +204,9 @@ private fun ApplicationPanel(status: String?, onOpenAccount: () -> Unit, onRefre
         "suspended" -> "Open your account for details or contact Mireli support."
         else -> "Refresh to load your application and see what to do next."
     }
-        Column(Modifier.fillMaxWidth().padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        DriverOverviewSurface {
             Text(title, style = MaterialTheme.typography.headlineMedium)
-            Text(detail, style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(detail, style = MaterialTheme.typography.bodyMedium)
             DepartureButton(
                 onClick = if (status == null) onRefresh else onOpenAccount,
                 enabled = true,
@@ -423,70 +422,6 @@ private fun PickupRow(trip: JSONObject, party: JSONObject, index: Int, onOpenTri
     }
 }
 
-/**
- * The driver's own position, live. The tiny map is a preview: tapping it opens the full map with
- * speed, accuracy and guidance.
- */
-@Composable
-private fun LivePositionCard(onOpenMap: () -> Unit) {
-    val position = rememberDriverPosition()
-    val point = position.point
-    MireliPanel(Modifier.fillMaxWidth(), padding = 0.dp) {
-        Box(Modifier.fillMaxWidth().height(148.dp)) {
-            if (point != null) {
-                NavigationMap(
-                    target = null, location = point, fix = position.fix, route = null,
-                    modifier = Modifier.fillMaxSize(), interactive = false, controls = false,
-                    rotateVehicle = false
-                )
-                Box(Modifier.matchParentSize().clickable(onClick = onOpenMap))
-            } else {
-                Column(
-                    Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant)
-                        .clickable(onClick = onOpenMap).padding(MireliDesign.PanelPadding),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(MireliIcons.LocationOn, null, tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(26.dp))
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        position.error ?: "Waiting for a location fix…",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
-                }
-            }
-        }
-        Column(Modifier.padding(MireliDesign.PanelPadding),
-            verticalArrangement = Arrangement.spacedBy(MireliDesign.Space.xs)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(MireliIcons.CarFront, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                Text("Your location", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                TextButton(onClick = onOpenMap, contentPadding = PaddingValues(horizontal = 8.dp)) {
-                    Text("Open map", style = MaterialTheme.typography.labelLarge)
-                }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                MireliStatusChip(
-                    position.accuracy?.let { "±${it.toInt()} m" } ?: "No fix yet",
-                    if (position.accuracy != null) ChipTone.Positive else ChipTone.Neutral
-                )
-                position.speedKmh?.takeIf { it > 2f }?.let { MireliStatusChip("%.0f km/h".format(it)) }
-                position.ageSeconds?.let {
-                    MireliStatusChip("updated ${it.coerceAtLeast(0)}s ago", if (it < 15) ChipTone.Positive else ChipTone.Neutral)
-                }
-            }
-            Text(
-                "Location can be shared with Mireli during an assigned transfer.",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
 @Composable
 internal fun DriverHomeDashboard(
     name: String?,
@@ -502,6 +437,8 @@ internal fun DriverHomeDashboard(
     onOpenTrip: (String) -> Unit,
     onStartNavigation: (String, NavigationStop) -> Unit,
     onOpenMap: () -> Unit,
+    onOpenEarnings: () -> Unit,
+    paidAmount: String? = null,
     renewalNote: String? = null
 ) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(MireliDesign.Space.md)) {
@@ -512,6 +449,11 @@ internal fun DriverHomeDashboard(
         }
         if (!eligible) {
             if (renewalNote == null) ApplicationPanel(applicationStatus, onOpenAccount, onRefresh)
+            DriverOverviewLink("Live map", "Find a destination or check your location", MireliIcons.Map, onOpenMap)
+            HorizontalDivider()
+            DriverOverviewLink("Trip activity", "Assignments and journey history", MireliIcons.CarFront, onOpenTrips)
+            HorizontalDivider()
+            DriverOverviewLink("Earnings", paidAmount ?: "View settlements and payout details", MireliIcons.AccountBalanceWallet, onOpenEarnings)
             return@Column
         }
 
@@ -554,15 +496,17 @@ internal fun DriverHomeDashboard(
                 )
             }
         } else if (tripsCurrent) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                DriverOverviewSurface {
                     Text("No transfers assigned", style = MaterialTheme.typography.headlineSmall)
                     Text("Your next scheduled transfer will appear here when Mireli assigns it.",
-                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        style = MaterialTheme.typography.bodyMedium)
                     TextButton(onClick = onOpenTrips) { Text("View trips") }
                 }
         }
+        DriverOverviewLink("Live map", "Find a destination or check your location", MireliIcons.Map, onOpenMap)
+        HorizontalDivider()
+        DriverOverviewLink("Earnings", paidAmount ?: "View settlements and payout details", MireliIcons.AccountBalanceWallet, onOpenEarnings)
         SgrTodayPanel(now)
-        LivePositionCard(onOpenMap)
     }
 }
 

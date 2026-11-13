@@ -27,6 +27,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -36,17 +38,17 @@ import com.mireli.driver.domain.DriverNavigation
 import com.mireli.driver.domain.DriverRoute
 import com.mireli.driver.domain.GeoPoint
 import com.mireli.driver.domain.NavigationStop
-import com.mireli.driver.domain.PlaceSearch
+import com.mireli.driver.domain.DriverDestination
 import com.mireli.driver.domain.SimulatedDrive
 import com.mireli.driver.domain.distanceMeters
 import com.mireli.driver.domain.nearestRoutePointIndex
 import com.mireli.driver.domain.offRouteMetres
 import com.mireli.driver.domain.remainingDistanceMeters
 import com.mireli.driver.domain.estimatedRemainingSeconds
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.time.Instant
 import java.time.ZoneId
@@ -182,7 +184,10 @@ internal fun DriverNavigationScreen(
     onClose: () -> Unit,
     nextTrain: String? = null,
     trainStation: String? = null,
-    simulated: SimulatedDrive? = null
+    simulated: SimulatedDrive? = null,
+    onSearch: (suspend (String, GeoPoint?) -> List<DriverDestination>)? = null,
+    onDestinationRoute: (suspend (GeoPoint, GeoPoint) -> DriverRoute)? = null,
+    satelliteToken: String? = null
 ) {
     val context = LocalContext.current
     val livePosition = rememberDriverPosition()
@@ -195,13 +200,15 @@ internal fun DriverNavigationScreen(
     var manualFallback by remember { mutableStateOf(false) }
     var expanded by rememberSaveable { mutableStateOf(false) }
     var offRouteSamples by remember { mutableIntStateOf(0) }
-    // Free-form destination preview: the driver keys in any destination and gets the shortest
-    // road path with a live shrinking distance. It is a preview, never an authorized dispatch route.
+    val focus = LocalFocusManager.current
+    val uriHandler = LocalUriHandler.current
     var searchQuery by rememberSaveable { mutableStateOf("") }
-    var searchResults by remember { mutableStateOf<List<PlaceSearch.Place>?>(null) }
+    var searchResults by remember { mutableStateOf<List<DriverDestination>?>(null) }
     var searching by remember { mutableStateOf(false) }
     var searchError by remember { mutableStateOf<String?>(null) }
     var previewStop by remember { mutableStateOf<NavigationStop?>(null) }
+    val destination = stop ?: previewStop
+    var searchJob by remember { mutableStateOf<Job?>(null) }
     val scope = rememberCoroutineScope()
     val granted = locationPermissionGranted(context)
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
@@ -229,23 +236,40 @@ internal fun DriverNavigationScreen(
         offRouteSamples = if (route != null && (error ?: 0.0) > OFF_ROUTE_METRES) offRouteSamples + 1 else 0
     }
 
-    LaunchedEffect(tripId, stop?.id, current?.latitude, current?.longitude, simulated) {
-        val request = onRequestRoute
-        val point = current
-        val destination = stop
-        if (simulated != null || request == null || point == null || destination == null) return@LaunchedEffect
+    LaunchedEffect(tripId, destination, current, position.live, simulated, onRequestRoute, onDestinationRoute) {
+        val point = current ?: return@LaunchedEffect
+        val target = destination ?: return@LaunchedEffect
+        if (simulated != null || loading || !position.live) return@LaunchedEffect
         val now = SystemClock.elapsedRealtime()
-        if (routeState != null && now - lastRequest < 25_000L) return@LaunchedEffect
-        val needsRoute = routeState == null || (lateralError ?: 0.0) > OFF_ROUTE_METRES
-        if (!needsRoute) return@LaunchedEffect
-        loading = true; routeError = null; lastRequest = now
-        request(tripId.orEmpty(), destination.id, point) { result ->
-            result.onSuccess { json ->
-                runCatching { DriverRoute.fromJson(json) }
-                    .onSuccess { routeState = it; routeError = null; offRouteSamples = 0 }
-                    .onFailure { routeError = "The route service returned unusable directions." }
-            }.onFailure { routeError = it.message?.take(220) ?: "Directions are unavailable right now." }
-            loading = false
+        if (lastRequest > 0 && now - lastRequest < 25_000L) return@LaunchedEffect
+        if (routeState != null && (lateralError ?: 0.0) <= OFF_ROUTE_METRES) return@LaunchedEffect
+        val request = onRequestRoute
+        if (stop != null && request != null) {
+            loading = true
+            routeError = null
+            lastRequest = now
+            request(tripId.orEmpty(), target.id, point) { result ->
+                result.mapCatching(DriverRoute::fromJson)
+                    .onSuccess { routeState = it; offRouteSamples = 0 }
+                    .onFailure { routeError = it.message?.take(160) ?: "Directions are unavailable." }
+                loading = false
+            }
+        } else if (stop == null && onDestinationRoute != null) {
+            loading = true
+            routeError = null
+            lastRequest = now
+            scope.launch {
+                try {
+                    val result = onDestinationRoute(point, GeoPoint(target.latitude, target.longitude))
+                    if (previewStop === target) { routeState = result; offRouteSamples = 0 }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    if (previewStop === target) routeError = error.message?.take(160) ?: "Directions are unavailable."
+                } finally {
+                    if (previewStop === target) loading = false
+                }
+            }
         }
     }
 
@@ -259,57 +283,66 @@ internal fun DriverNavigationScreen(
     val mapTarget = stop ?: previewStop
 
     fun searchDestination(query: String) {
-        scope.launch {
-            searching = true; searchError = null
-            // Both services are blocking HTTP. rememberCoroutineScope() runs on the main
-            // dispatcher, so without this hop the UI thread stalls and the call fails.
-            runCatching { withContext(Dispatchers.IO) { PlaceSearch.search(query, current) } }
-                .onSuccess { results ->
-                    searchResults = results
-                    if (results.isEmpty()) searchError = "No place matched. Try a road or landmark name."
-                }
-                .onFailure { searchError = it.message?.take(160) ?: "Search is unavailable right now." }
-            searching = false
-        }
-    }
-    fun previewTo(place: PlaceSearch.Place) {
-        val from = current ?: run {
-            searchError = "Wait for a GPS fix, then choose the destination again."
+        focus.clearFocus()
+        val search = onSearch
+        if (search == null) {
+            if (DriverNavigation.addressSearch(query)?.let { openMaps(context, it) } != true) {
+                searchError = "Google Maps could not open."
+            }
             return
         }
-        searchResults = null
-        searchError = null
-        previewStop = NavigationStop("preview-${place.id}", place.name, place.point.latitude, place.point.longitude)
-        scope.launch {
-            loading = true; routeError = null
-            runCatching { withContext(Dispatchers.IO) { PlaceSearch.route(from, place.point) } }
-                .onSuccess { routeState = it.route }
-                .onFailure { routeError = it.message?.take(160) ?: "No road route found to that destination." }
-            loading = false
+        searchJob?.cancel()
+        searchJob = scope.launch {
+            searching = true
+            searchError = null
+            try {
+                val results = search(query, current?.takeIf { position.live })
+                searchResults = results.takeIf { it.isNotEmpty() }
+                if (results.isEmpty()) searchError = "No place matched. Try a road or landmark name."
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                searchError = error.message?.take(160) ?: "Search is unavailable."
+            } finally {
+                searching = false
+            }
         }
     }
     fun clearPreview() {
+        searchJob?.cancel()
         previewStop = null
         routeState = null
         routeError = null
         searchResults = null
         searchError = null
+        loading = false
+        lastRequest = 0
+        manualFallback = false
     }
-    val atStop = stop != null && current != null && position.accuracy != null &&
-        distanceMeters(current, GeoPoint(stop.latitude, stop.longitude)) + position.accuracy!! < 35.0
+    fun previewTo(place: DriverDestination) {
+        clearPreview()
+        previewStop = NavigationStop("destination-${place.id}", place.name, place.point.latitude, place.point.longitude)
+        searchQuery = place.name
+    }
+    val atStop = destination != null && current != null && position.accuracy != null && position.live &&
+        distanceMeters(current, GeoPoint(destination.latitude, destination.longitude)) + position.accuracy!! < 35.0
     val offRoute = offRouteSamples >= 2
     val accuracy = position.accuracy
     val laneHonest = accuracy != null && accuracy <= LANE_ACCURACY_METRES
+    val guidanceError = routeError ?: if (stop != null && onRequestRoute == null && simulated == null) {
+        "Open Google Maps for directions to this stop."
+    } else null
     // One state machine decides every banner and status string on this screen.
     val phase = com.mireli.driver.domain.navigationPhase(
-        atStop = atStop, hasFix = current != null, offRoute = offRoute,
-        loading = loading, routeError = routeError, hasRoute = route != null
+        atStop = atStop, hasFix = position.live, offRoute = offRoute,
+        loading = loading, routeError = guidanceError, hasRoute = route != null
     )
 
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         NavigationMap(
             target = mapTarget, location = current, fix = position.fix, route = route,
-            modifier = Modifier.fillMaxSize(), interactive = true, follow = true
+            modifier = Modifier.fillMaxSize(), interactive = true, follow = stop != null || simulated != null,
+            satelliteToken = satelliteToken
         )
 
         Column(
@@ -337,17 +370,16 @@ internal fun DriverNavigationScreen(
                     }
                 }
             }
-            if (stop == null && simulated == null && com.mireli.driver.BuildConfig.DEBUG &&
-                com.mireli.driver.BuildConfig.DRIVER_SERVICE_TEST) {
+            if (stop == null && simulated == null) {
                 Surface(shape = RoundedCornerShape(MireliDesign.Radius.card), color = MaterialTheme.colorScheme.surface, shadowElevation = 3.dp) {
                     Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Icon(MireliIcons.LocationOn, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
                             androidx.compose.material3.TextField(
                                 value = searchQuery,
-                                onValueChange = { searchQuery = it },
+                                onValueChange = { searchQuery = it.take(120); searchJob?.cancel(); searchResults = null; searchError = null },
                                 modifier = Modifier.weight(1f),
-                                placeholder = { Text("Search any destination…", style = MaterialTheme.typography.bodyMedium) },
+                                placeholder = { Text(if (onSearch == null) "Search in Google Maps" else "Where are you going?", style = MaterialTheme.typography.bodyMedium) },
                                 singleLine = true,
                                 colors = androidx.compose.material3.TextFieldDefaults.colors(
                                     focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
@@ -362,6 +394,11 @@ internal fun DriverNavigationScreen(
                                     onSearch = { if (searchQuery.trim().length >= 3) searchDestination(searchQuery) }
                                 )
                             )
+                            if (searchQuery.trim().length >= 3) {
+                                IconButton(onClick = { searchDestination(searchQuery) }, enabled = !searching) {
+                                    Icon(MireliIcons.Search, "Search destination")
+                                }
+                            }
                             if (previewStop != null || searchQuery.isNotEmpty()) {
                                 IconButton(onClick = {
                                     searchQuery = ""; clearPreview()
@@ -370,12 +407,12 @@ internal fun DriverNavigationScreen(
                                 }
                             }
                         }
-                        if (previewStop == null) {
+                        if (previewStop == null && searchQuery.isBlank()) {
                             Row(
                                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                listOf("Mombasa SGR Terminus", "Likoni Ferry", "Moi Airport Mombasa").forEach { hint ->
+                                listOf("Likoni Ferry", "Moi Airport Mombasa", "Fort Jesus").forEach { hint ->
                                     androidx.compose.material3.AssistChip(
                                         onClick = { searchQuery = hint; searchDestination(hint) },
                                         label = { Text(hint, style = MaterialTheme.typography.labelMedium, maxLines = 1) }
@@ -410,18 +447,13 @@ internal fun DriverNavigationScreen(
                         }
                     }
                 }
-                previewStop?.let { chosen ->
-                    Surface(shape = RoundedCornerShape(MireliDesign.Radius.chip), color = MaterialTheme.colorScheme.secondaryContainer) {
-                        Text(
-                            "Preview route · not a dispatch assignment",
-                            Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
+                if (onSearch != null && (searchResults != null || previewStop != null)) {
+                    TextButton(onClick = { runCatching { uriHandler.openUri("https://docs.aws.amazon.com/location/latest/developerguide/data-attribution.html") } }) {
+                        Text("Map data © AWS, HERE", style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }
-            if (stop != null && !atStop) {
+            if (destination != null && !atStop) {
                 Surface(
                     shape = RoundedCornerShape(MireliDesign.Radius.card),
                     color = if (offRoute) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primary,
@@ -443,11 +475,11 @@ internal fun DriverNavigationScreen(
                                     com.mireli.driver.domain.NavPhase.OFF_ROUTE -> "Off route · finding a way back"
                                     com.mireli.driver.domain.NavPhase.ROUTING -> "Working out your route…"
                                     com.mireli.driver.domain.NavPhase.NO_FIX -> "Waiting for a GPS fix…"
-                                    com.mireli.driver.domain.NavPhase.FAILED -> routeError ?: "Directions are unavailable right now."
-                                    com.mireli.driver.domain.NavPhase.ARRIVED -> "Arrived at ${stop.name}"
+                                    com.mireli.driver.domain.NavPhase.FAILED -> guidanceError ?: "Directions are unavailable right now."
+                                    com.mireli.driver.domain.NavPhase.ARRIVED -> "Arrived at ${destination.name}"
                                     com.mireli.driver.domain.NavPhase.GUIDING ->
                                         maneuver?.let { "${metres(maneuverDistance ?: it.distanceMeters)} · ${it.instruction}" }
-                                            ?: "Head to ${stop.name}"
+                                            ?: "Head to ${destination.name}"
                                 },
                                 style = MaterialTheme.typography.titleSmall,
                                 color = if (offRoute) MaterialTheme.colorScheme.onErrorContainer else Color.White,
@@ -470,7 +502,7 @@ internal fun DriverNavigationScreen(
             }
             if (atStop) {
                 Surface(shape = RoundedCornerShape(MireliDesign.Radius.card), color = MaterialTheme.colorScheme.primaryContainer, shadowElevation = 4.dp) {
-                    Text("You have arrived at ${stop?.name}", Modifier.padding(16.dp),
+                    Text("You have arrived at ${destination?.name}", Modifier.padding(16.dp),
                         style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
                 }
             }
@@ -602,6 +634,10 @@ private fun NavigationSheet(
                 }
             }
 
+            if (canOpenMaps) {
+                TextButton(onClick = onOpenMaps, modifier = Modifier.align(Alignment.End)) { Text("Open in Google Maps") }
+            }
+            if (manualFallback) Text("Google Maps could not open.", color = MaterialTheme.colorScheme.error)
             AnimatedVisibility(expanded) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 10.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -615,16 +651,7 @@ private fun NavigationSheet(
                             )
                         }
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        OutlinedButton(onClick = onEnd, modifier = Modifier.weight(1f)) { Text("End navigation") }
-                        if (canOpenMaps) {
-                            Button(onClick = onOpenMaps, modifier = Modifier.weight(1f)) { Text("Open in Maps") }
-                        }
-                    }
-                    if (manualFallback) {
-                        Text("No maps app or browser could open.", style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error)
-                    }
+                    TextButton(onClick = onEnd) { Text("End navigation") }
                 }
             }
         }

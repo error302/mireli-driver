@@ -6,6 +6,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.mireli.driver.data.*
 import com.mireli.driver.domain.GeoPoint
+import com.mireli.driver.domain.DriverDestination
+import com.mireli.driver.domain.DriverRoute
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,7 +19,7 @@ data class DocumentUpload(val type: String, val uploading: Boolean = false, val 
 
 data class DriverServiceState(val loading:Boolean=true,val signedIn:Boolean=false,val challengeId:String?=null,
     val demoCode:String?=null,val challengeEmail:String?=null,val onboarding:JSONObject?=null,val earnings:JSONObject?=null,val support:JSONObject?=null,val supportSent:Int=0,val eligibility:JSONObject?=null,val trips:JSONObject?=null,val tripDataCurrent:Boolean=false,val pendingTripAction:Boolean=false,val emailSignInOpen:Boolean?=null,val registrationOpen:Boolean?=null,val navigationOpen:Boolean=false,val serviceMessage:String?=null,val supportEmail:String=DEFAULT_SUPPORT_EMAIL,val resendAt:Long=0,val error:String?=null,
-    val documentUpload: DocumentUpload? = null)
+    val documentUpload: DocumentUpload? = null, val destinationSearchOpen: Boolean = false, val satelliteOpen: Boolean = false)
 class DriverServicesViewModel(application:Application):AndroidViewModel(application) {
     private val api=DriverApi()
     private val sessions=DriverSessionStore(application)
@@ -58,7 +60,7 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
             throw cancelled
         } catch (error: Exception) {
             mutable.value = mutable.value.copy(emailSignInOpen = null, registrationOpen = null,
-                navigationOpen = false, serviceMessage = null)
+                navigationOpen = false, destinationSearchOpen = false, satelliteOpen = false, serviceMessage = null)
             throw error
         }
         val contactEmail = status.optString("supportEmail").takeIf { Patterns.EMAIL_ADDRESS.matcher(it).matches() }
@@ -66,6 +68,8 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
             emailSignInOpen = status.opt("emailSignInOpen") == true,
             registrationOpen = status.opt("registrationOpen") == true,
             navigationOpen = status.opt("navigationOpen") == true,
+            destinationSearchOpen = status.opt("destinationSearchOpen") == true,
+            satelliteOpen = status.opt("satelliteOpen") == true,
             serviceMessage = status.optString("message").takeIf { it.isNotBlank() && it != "null" },
             supportEmail = contactEmail ?: DEFAULT_SUPPORT_EMAIL
         )
@@ -195,6 +199,27 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
             onComplete(result)
         }
     }
+    suspend fun searchDestinations(query: String, near: GeoPoint?): List<DriverDestination> {
+        val token = session?.token ?: error("Sign in again to search for destinations.")
+        val body = JSONObject().put("query", query)
+        if (near != null) body.put("latitude", near.latitude).put("longitude", near.longitude)
+        val response = api.request("/navigation/search", "POST", token, body)
+        val places = response.getJSONArray("places")
+        return List(places.length()) { index ->
+            val place = places.getJSONObject(index)
+            DriverDestination(place.getString("id"), place.getString("name"), place.optString("detail"),
+                GeoPoint(place.getDouble("latitude"), place.getDouble("longitude")))
+        }.filter { it.point.valid }
+    }
+
+    suspend fun destinationRoute(origin: GeoPoint, target: GeoPoint): DriverRoute {
+        val token = session?.token ?: error("Sign in again to request directions.")
+        fun GeoPoint.json() = JSONObject().put("latitude", latitude).put("longitude", longitude)
+        return DriverRoute.fromJson(api.request("/navigation/destination", "POST", token,
+            JSONObject().put("origin", origin.json()).put("destination", target.json())))
+    }
+
+    internal fun satelliteSessionToken(): String? = session?.token
     fun retryTripAction()=work {
         val id=driverId?:throw DriverServiceException(401,"Sign in again.")
         val pending=withContext(Dispatchers.IO){sessions.savedAction(id)}?:return@work

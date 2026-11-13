@@ -7,6 +7,7 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.mireli.driver.ui.DepartureSettlement
 import com.mireli.driver.ui.DriverDocumentRow
+import com.mireli.driver.ui.DriverHomeDashboard
 import com.mireli.driver.ui.MireliTheme
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -15,6 +16,19 @@ import org.junit.Test
 
 class DeparturePagesTest {
     @get:Rule val rule = createComposeRule()
+
+    @Test fun applicantsCanOpenTheLiveMapBeforeApproval() {
+        var opened = false
+        rule.setContent { MireliTheme { Surface {
+            DriverHomeDashboard(name = "Pilot Driver", eligible = false, verified = false, applicationStatus = "draft",
+                tripsCurrent = true, trips = emptyList(), activeNavigation = null, onRefresh = {}, onOpenTrips = {},
+                onOpenAccount = {}, onOpenTrip = {}, onStartNavigation = { _, _ -> }, onOpenMap = { opened = true },
+                onOpenEarnings = {})
+        } } }
+        rule.onNodeWithText("Continue onboarding").assertIsDisplayed()
+        rule.onNodeWithText("Live map").performClick()
+        assertEquals(true, opened)
+    }
 
     @Test fun documentRowRequiresAValidExpiryAndShowsAnInlineError() {
         val requirement = JSONObject("""{"title":"Driving licence","required":true,"expires":true}""")

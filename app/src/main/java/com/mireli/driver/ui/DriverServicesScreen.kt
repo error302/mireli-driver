@@ -248,6 +248,11 @@ private fun policyLink(raw: String): String? = runCatching {
                             onOpenTrip = { id -> highlightedTripId=id; tripHistory=false; section=3 },
                             onStartNavigation = { tripId, stop -> navTarget=NavTarget(tripId,stop) },
                             onOpenMap = { navTarget=NavTarget(null,null) },
+                            onOpenEarnings = { section=1 },
+                            paidAmount = state.earnings?.getJSONArray("totals")?.objects()?.let { totals ->
+                                val paid = totals.filter { it.getString("status") == "completed" }.sumOf { it.getLong("netMinor") }
+                                if (hideBalance) "Paid · balance hidden" else "${money(paid)} paid"
+                            },
                             renewalNote = renewalNote(state.eligibility)
                         )
                     }
@@ -256,25 +261,23 @@ private fun policyLink(raw: String): String? = runCatching {
                     val verified = state.eligibility?.optBoolean("verified") == true
                     val canEdit = !state.loading && applicationStatus in listOf("draft", "changes_requested", "approved")
                     val documentLimit = onboarding.getInt("maxDocumentBytes")
-                    item {
+                    item {DriverOverviewSurface {
                         val name = onboarding.getJSONObject("profile").optString("fullName")
                             .takeUnless { it.isBlank() || it == "New applicant" }
                         DriverIdentity(name, verified, prominent = true)
-                    }
-                    item {Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         DepartureValueRow("Application", if (applicationStatus == "submitted") "In review" else applicationStatus.readableStatus(),
                             confirmed = applicationStatus == "approved")
                         DepartureNote(if(state.eligibility?.optBoolean("eligible")==true)"Eligible for new assignments" else "Approval required before new assignments")
                         renewalNote(state.eligibility)?.let { DepartureNote(it) }
                         app.optString("reviewReason").takeIf{it.isNotBlank()&&it!="null"}?.let{Text(it)}
                         if (applicationStatus == "approved") {
-                            DepartureNote("Saving profile changes or replacing evidence sends the application back for review.")
+                            DepartureNote("Mireli reviews replacement documents before they take effect.")
                         }
                     }}
                     item {
                         DepartureSection("Driver documents")
                         Spacer(Modifier.height(6.dp))
-                        DepartureNote("PDF, JPG or PNG, up to ${documentLimit / (1024 * 1024)} MB each. Upload a clear, complete, unedited copy of each original for private review.")
+                        DepartureNote("PDF, JPG or PNG, up to ${documentLimit / (1024 * 1024)} MB each. Use a clear, complete copy of the original. Mireli reviews it privately.")
                     }
                     val documents = app.getJSONArray("documents").objects().associateBy { it.getString("type") }
                     val graceUntil = state.eligibility?.opt("graceUntil") as? String
@@ -319,15 +322,19 @@ private fun policyLink(raw: String): String? = runCatching {
                     state.earnings?.let{statement->
                         val totals = statement.getJSONArray("totals").objects()
                         val lines = statement.getJSONArray("lines").objects()
-                        item {
+                        item { DriverOverviewSurface {
                             val paid = totals.filter { it.getString("status") == "completed" }.sumOf { it.getLong("netMinor") }
                             DepartureAmount("Confirmed paid earnings", shown(paid))
+                            if (totals.any { it.getString("status") != "completed" }) HorizontalDivider()
                             totals.filterNot { it.getString("status") == "completed" }.forEach {
                                 DepartureValueRow(it.getString("status").settlementLabel(), shown(it.getLong("netMinor")))
                             }
-                        }
+                        } }
                         item { DepartureSection("Settlements") }
-                        if (lines.isEmpty()) item { DepartureNote("No settlement records yet. Completed eligible journeys will appear here.") }
+                        if (lines.isEmpty()) item {
+                            DepartureNote("No settlement records yet. Completed journeys with a settlement will appear here.")
+                            TextButton(onClick = { tripHistory = true; section = 3 }) { Text("View trip history") }
+                        }
                         itemsIndexed(lines, key = { _, line -> line.getString("id") }) { index, line ->
                             DepartureSettlement(line, hideBalance, Modifier.staggerIn(index.coerceAtMost(5)))
                         }
@@ -451,7 +458,10 @@ private fun policyLink(raw: String): String? = runCatching {
             .minOrNull()
         DriverNavigationScreen(
             tripId=target.tripId, stop=target.stop, onRequestRoute=routeRequest, onClose={navTarget=null},
-            nextTrain = nextDeparture?.let { countdown(clock, it) }
+            nextTrain = nextDeparture?.takeIf { target.tripId != null }?.let { countdown(clock, it) },
+            onSearch = if (state.destinationSearchOpen) vm::searchDestinations else null,
+            onDestinationRoute = if (state.destinationSearchOpen) vm::destinationRoute else null,
+            satelliteToken = if (state.satelliteOpen) vm.satelliteSessionToken() else null
         )
     }
     }

@@ -18,11 +18,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -59,6 +62,10 @@ import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
+import org.maplibre.android.module.http.HttpRequestUtil
+import okhttp3.OkHttpClient
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import org.json.JSONObject
 import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.layers.CircleLayer
 import org.maplibre.android.style.layers.FillLayer
@@ -106,9 +113,8 @@ internal enum class MapLayer(val label: String, val styleName: String?) {
     Streets("Streets", "liberty"),
     Daylight("Daylight", "bright"),
     Minimal("Minimal", "positron"),
-    Night("Night", "dark");
-
-    fun next(): MapLayer = entries[(ordinal + 1) % entries.size]
+    Night("Night", "dark"),
+    Satellite("Satellite", null);
 
     companion object {
         private const val PREF = "map_layer"
@@ -119,6 +125,27 @@ internal enum class MapLayer(val label: String, val styleName: String?) {
         }
     }
 }
+
+private object DriverMapHttp {
+    private val origin = BuildConfig.DRIVER_SERVICE_URL.toHttpUrl()
+    @Volatile var satelliteToken: String? = null
+    val client = OkHttpClient.Builder().addNetworkInterceptor { chain ->
+        val request = chain.request()
+        val url = request.url
+        val token = satelliteToken
+        if (token != null && url.scheme == origin.scheme && url.host == origin.host && url.port == origin.port &&
+            url.encodedPath.startsWith("/api/v1/driver/navigation/satellite/")) {
+            chain.proceed(request.newBuilder().header("Authorization", "Bearer $token").build())
+        } else chain.proceed(request)
+    }.build()
+}
+
+private fun satelliteStyle(): String = JSONObject("""{
+  "version":8,"sources":{"imagery":{"type":"raster","tileSize":256,"maxzoom":19,
+  "tiles":["${BuildConfig.DRIVER_SERVICE_URL}/api/v1/driver/navigation/satellite/{z}/{x}/{y}"],
+  "attribution":"© <a href='https://docs.aws.amazon.com/location/latest/developerguide/data-attribution.html'>AWS</a>, <a href='https://legal.here.com/en-gb/terms/general-content-supplier-terms-and-notices'>HERE</a>"}},
+  "layers":[{"id":"imagery","type":"raster","source":"imagery"}]}
+""").toString()
 
 /** Resolves the style URL for a layer choice; Auto keeps the theme-following behaviour. */
 internal fun mapLayerUrl(layer: MapLayer, dark: Boolean): String {
@@ -149,14 +176,22 @@ internal fun NavigationMap(
     follow: Boolean = false,
     controls: Boolean = true,
     /** False draws the car pointing up: a north-up preview would otherwise show it sideways. */
-    rotateVehicle: Boolean = true
+    rotateVehicle: Boolean = true,
+    satelliteToken: String? = null
 ) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
     val dark = MaterialTheme.colorScheme.background.luminanceIsDark()
     val prefs = remember { context.getSharedPreferences("map", android.content.Context.MODE_PRIVATE) }
     var layerChoice by remember { mutableStateOf(MapLayer.read(prefs)) }
-    val styleUrl = mapLayerUrl(layerChoice, dark)
+    val activeLayer = if (layerChoice == MapLayer.Satellite && satelliteToken == null) MapLayer.Auto else layerChoice
+    val styleUrl = mapLayerUrl(activeLayer, dark)
+    var layersOpen by remember { mutableStateOf(false) }
+    var retryStyle by remember { mutableIntStateOf(0) }
+    DisposableEffect(satelliteToken) {
+        if (satelliteToken != null) DriverMapHttp.satelliteToken = satelliteToken
+        onDispose { if (satelliteToken != null && DriverMapHttp.satelliteToken == satelliteToken) DriverMapHttp.satelliteToken = null }
+    }
 
     var map by remember { mutableStateOf<MapLibreMap?>(null) }
     var style by remember { mutableStateOf<Style?>(null) }
@@ -181,6 +216,8 @@ internal fun NavigationMap(
 
     val mapView = remember {
         MapLibre.getInstance(context.applicationContext)
+        HttpRequestUtil.setOkHttpClient(DriverMapHttp.client)
+        HttpRequestUtil.setPrintRequestUrlOnFailure(false)
         MapView(context)
     }
 
@@ -208,9 +245,11 @@ internal fun NavigationMap(
         mapView.addOnDidFailLoadingMapListener { reason -> failed = true; Log.e(TAG, "map failed: $reason") }
         mapView.getMapAsync { ready ->
             map = ready
+            ready.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(-4.0435, 39.6682), 12.0))
             // The SDK wordmark sits on top of the card artwork; attribution stays on instead.
             ready.uiSettings.isLogoEnabled = false
             ready.uiSettings.isAttributionEnabled = true
+            if (controls) ready.uiSettings.setAttributionMargins(12, 0, 0, (150 * context.resources.displayMetrics.density).toInt())
             // The SDK compass floats over the status bar; we draw our own control instead.
             ready.uiSettings.isCompassEnabled = false
             ready.uiSettings.setAllGesturesEnabled(interactive)
@@ -242,13 +281,15 @@ internal fun NavigationMap(
 
     // Style loads, initial and on layer switch. installLayers re-applies the vehicle, route and
     // accuracy layers on the fresh style, and styleVersion restarts the render loop and marker.
-    LaunchedEffect(map, styleUrl) {
+    LaunchedEffect(map, styleUrl, activeLayer, retryStyle) {
         val ready = map ?: return@LaunchedEffect
         // Drop the old style reference before the switch: MapLibre invalidates it, and the render
         // loop must not touch it while the new style loads.
         loaded = false
+        failed = false
         style = null
-        ready.setStyle(styleUrl) { loadedStyle ->
+        val builder = Style.Builder().apply { if (activeLayer == MapLayer.Satellite) fromJson(satelliteStyle()) else fromUri(styleUrl) }
+        ready.setStyle(builder) { loadedStyle ->
             try {
                 installLayers(loadedStyle, carIcon, shadowIcon, haloIcon)
                 style = loadedStyle
@@ -262,6 +303,16 @@ internal fun NavigationMap(
                 failed = true
             }
         }
+        delay(12_000)
+        if (!loaded) failed = true
+    }
+
+    LaunchedEffect(map, loaded, route) {
+        val ready = map ?: return@LaunchedEffect
+        if (loaded && route != null) {
+            drawRoute(style, route, location)
+            if (!following) frameRouteOrPoint(ready, route, location ?: route.geometry.first())
+        }
     }
 
     LaunchedEffect(map, loaded, styleVersion, target?.id) {
@@ -272,6 +323,7 @@ internal fun NavigationMap(
             targetMarker = runCatching {
                 ready.addMarker(MarkerOptions().position(LatLng(stop.latitude, stop.longitude)).title(stop.name))
             }.getOrNull()
+            if (location == null) ready.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(stop.latitude, stop.longitude), 15.0))
         }
     }
 
@@ -358,11 +410,11 @@ internal fun NavigationMap(
                 Modifier.align(Alignment.Center).padding(20.dp),
                 color = MaterialTheme.colorScheme.surface, shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
             ) {
-                Text(
-                    "Map tiles are unavailable. Try again when you have a connection.",
-                    Modifier.padding(16.dp), color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                Column(Modifier.padding(16.dp)) {
+                    Text("${activeLayer.label} map could not load.", color = MaterialTheme.colorScheme.error)
+                    TextButton(onClick = { retryStyle++ }) { Text("Retry map") }
+                    if (activeLayer != MapLayer.Auto) TextButton(onClick = { layerChoice = MapLayer.Auto; MapLayer.write(prefs, MapLayer.Auto) }) { Text("Use automatic map") }
+                }
             }
         }
         if (controls) {
@@ -386,15 +438,12 @@ internal fun NavigationMap(
                     }) { Icon(MireliIcons.Compass, "Recentre and align to my heading") }
                 }
                 if (interactive) {
+                    Box {
                     Surface(
                         color = MaterialTheme.colorScheme.surface,
                         shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
                         shadowElevation = 2.dp,
-                        onClick = {
-                            val next = layerChoice.next()
-                            layerChoice = next
-                            MapLayer.write(prefs, next)
-                        }
+                        onClick = { layersOpen = true }
                     ) {
                         Row(
                             Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -402,8 +451,22 @@ internal fun NavigationMap(
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Icon(MireliIcons.Map, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
-                            Text(layerChoice.label, style = MaterialTheme.typography.labelMedium)
+                            Text("Layers · ${activeLayer.label}", style = MaterialTheme.typography.labelMedium)
                         }
+                    }
+                    DropdownMenu(expanded = layersOpen, onDismissRequest = { layersOpen = false }) {
+                        MapLayer.entries.forEach { layer ->
+                            val enabled = layer != MapLayer.Satellite || satelliteToken != null
+                            DropdownMenuItem(text = { Text(if (enabled) layer.label else "Satellite unavailable") },
+                                enabled = enabled, leadingIcon = if (layer == activeLayer) {
+                                    { Icon(MireliIcons.CheckCircleOutline, "Selected") }
+                                } else null, onClick = {
+                                    layerChoice = layer
+                                    MapLayer.write(prefs, layer)
+                                    layersOpen = false
+                                })
+                        }
+                    }
                     }
                     Surface(color = MaterialTheme.colorScheme.surface, shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp), shadowElevation = 2.dp) {
                         Column {
@@ -569,7 +632,7 @@ private fun drawRoute(style: Style?, route: DriverRoute?, point: GeoPoint?) {
         return
     }
     val split = point?.let { nearestRoutePointIndex(route, it) } ?: 0
-    val ahead = route.geometry.drop(split).ifEmpty { route.geometry.takeLast(2) }
+    val ahead = route.geometry.drop(split.coerceAtMost(route.geometry.lastIndex - 1))
     val behind = route.geometry.take((split + 1).coerceAtLeast(2))
     fun line(points: List<GeoPoint>): Feature {
         val coordinates = ArrayList<Point>(points.size)

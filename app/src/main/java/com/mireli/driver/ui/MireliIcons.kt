@@ -34,6 +34,7 @@ object MireliIcons {
 
     /** Folded road map. */
     val Map by lazy { icon("Map", "M3,6L9,3L15,6L21,3V18L15,21L9,18L3,21Z M9,3V18M15,6V21") }
+    val Search by lazy { icon("Search", "M10.5,3A7.5,7.5 0,1 0,10.5,18A7.5,7.5 0,1 0,10.5,3 M16,16L21,21") }
 
     val LocationOn by lazy { icon("LocationOn", "M12,22C12,22 4,14 4,9A8,8 0,1 1,20,9C20,14 12,22 12,22ZM12,6A3,3 0,1 0,12,12A3,3 0,1 0,12,6") }
 
