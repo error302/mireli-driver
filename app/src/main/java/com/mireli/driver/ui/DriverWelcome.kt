@@ -1,6 +1,6 @@
 package com.mireli.driver.ui
 
-import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -18,7 +18,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.colorResource
@@ -40,7 +39,7 @@ private val WelcomeText = Color(0xFFD5E0E9)
 
 @Composable
 private fun LaunchSystemBars() {
-    val window = (LocalContext.current as? ComponentActivity)?.window ?: return
+    val window = LocalActivity.current?.window ?: return
     val controller = remember(window) { WindowCompat.getInsetsController(window, window.decorView) }
     DisposableEffect(controller) {
         val lightStatus = controller.isAppearanceLightStatusBars
