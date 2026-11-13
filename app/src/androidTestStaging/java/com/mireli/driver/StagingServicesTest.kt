@@ -141,7 +141,9 @@ class StagingServicesTest {
         val deletion = runBlocking{api.request("/support",token=session!!.token)}.getJSONArray("cases").getJSONObject(0)
         assertEquals("account", deletion.getString("category"))
         assertTrue(deletion.getString("message").contains("requesting deletion of my Mireli Driver account"))
-        rule.onNodeWithText("Account",useUnmergedTree=true).performClick()
+        rule.onNode(hasText("Account", substring = false) and
+            SemanticsMatcher.expectValue(SemanticsProperties.Role, androidx.compose.ui.semantics.Role.Tab))
+            .performClick()
         reveal("Sign out");rule.onNodeWithText("Sign out").performClick()
         rule.waitUntil(30000){rule.onAllNodes(hasTestTag("driver_email_field") and isEnabled()).fetchSemanticsNodes().isNotEmpty()}
         assertNull(DriverSessionStore(rule.activity).load())
