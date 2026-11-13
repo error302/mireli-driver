@@ -2,6 +2,7 @@ package com.mireli.driver.ui
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
@@ -42,11 +43,14 @@ import org.json.JSONObject
 import java.net.URI
 
 private fun JSONArray.objects()=(0 until length()).map {getJSONObject(it)}
+private enum class DriverEntry { Welcome, SignIn, Register }
 private fun policyLink(raw: String): String? = runCatching {
     URI(raw).takeIf { it.scheme == "https" && it.host != null && it.userInfo == null }?.toASCIIString()
 }.getOrNull()
 @Composable fun DriverServicesScreen(onClose:(()->Unit)?=null,vm:DriverServicesViewModel=viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val starting by vm.startupLoading.collectAsStateWithLifecycle()
+    var entry by rememberSaveable { mutableStateOf(DriverEntry.Welcome) }
     var email by rememberSaveable {mutableStateOf("")};var code by remember {mutableStateOf("")}
     var section by rememberSaveable {mutableIntStateOf(4)};var accepted by rememberSaveable {mutableStateOf(false)}
     var supportCategory by rememberSaveable {mutableStateOf("trip")};var supportMessage by remember {mutableStateOf("")}
@@ -70,9 +74,14 @@ private fun policyLink(raw: String): String? = runCatching {
     var selectedType by rememberSaveable {mutableStateOf<String?>(null)};var selectedExpiry by rememberSaveable {mutableStateOf("")}
     var previouslySignedIn by remember {mutableStateOf(false)}
     LaunchedEffect(state.signedIn) {
+        if (state.signedIn) {
+            if (entry == DriverEntry.Register) section = 0
+            entry = DriverEntry.Welcome
+        }
         if(previouslySignedIn && !state.signedIn) {
             email="";code="";supportMessage="";payoutName="";payoutAcknowledged=false
             supportCategory="trip";accepted=false;selectedType=null;selectedExpiry="";tripHistory=false;highlightedTripId=null;section=4
+            entry = DriverEntry.Welcome
         }
         previouslySignedIn=state.signedIn
     }
@@ -104,19 +113,37 @@ private fun policyLink(raw: String): String? = runCatching {
         accepted = false
         policyLinkError = false
     }
+    if (starting) {
+        DriverLaunchLoading()
+        return
+    }
     if (!state.signedIn) {
+        if (entry == DriverEntry.Welcome && state.challengeId == null) {
+            DriverWelcome(
+                onSignIn = { entry = DriverEntry.SignIn }, onRegister = { entry = DriverEntry.Register },
+                message = state.error, onClose = onClose
+            )
+            return
+        }
+        val backToWelcome = {
+            vm.changeEmail()
+            code = ""
+            entry = DriverEntry.Welcome
+        }
+        BackHandler { if (!state.loading) backToWelcome() }
         DriverSignInScreen(
             state = state,
             email = email,
             onEmailChange = { email = it },
             code = code,
             onCodeChange = { code = it },
-            onRequestCode = { vm.requestCode(email) },
+            onRequestCode = { vm.requestCode(email, registering = entry == DriverEntry.Register) },
             onVerifyCode = { vm.verifyCode(code) },
             onChangeEmail = { vm.changeEmail(); code = "" },
             onRetry = vm::refreshServiceStatus,
             resendInSeconds = ((state.resendAt - clock + 999) / 1000).coerceAtLeast(0),
-            onClose = onClose,
+            registering = entry == DriverEntry.Register,
+            onBackToWelcome = backToWelcome,
             supportAddressFailed = showSupportAddress,
             onSupport = {
                 val emailIntent = Intent(Intent.ACTION_SENDTO, Uri.fromParts("mailto", state.supportEmail, null))

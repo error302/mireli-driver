@@ -1,0 +1,10 @@
+<resources>
+    <style name="Theme.Mireli.Launch" parent="Theme.Mireli.Light">
+        <item name="android:windowSplashScreenBackground">@color/mireli_launch_navy</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <item name="android:windowBackground">@color/mireli_launch_navy</item>
+        <item name="android:statusBarColor">@color/mireli_launch_navy</item>
+        <item name="android:navigationBarColor">@color/mireli_launch_navy</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

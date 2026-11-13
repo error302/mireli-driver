@@ -28,25 +28,42 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
     private var workGeneration = 0L
     private var supportRequest:Pair<String,String>?=null
     private val mutable=MutableStateFlow(DriverServiceState())
+    private val starting = MutableStateFlow(true)
+    val startupLoading = starting.asStateFlow()
     val state=mutable.asStateFlow()
     init {viewModelScope.launch {
         session=withContext(Dispatchers.IO){sessions.load()}
-        mutable.value=DriverServiceState(loading=false,signedIn=session!=null)
-        if(session!=null)refresh() else refreshServiceStatus()
+        mutable.value=DriverServiceState(signedIn=session!=null)
+        runWork {
+            try {
+                serviceStatus()
+                if (session != null) loadAccount()
+            } finally {
+                starting.value = false
+            }
+        }
     }}
     private fun work(operation:suspend()->Unit) {
         if(mutable.value.loading)return
         workGeneration++
         mutable.value=mutable.value.copy(loading=true,error=null)
-        viewModelScope.launch {
-            try{operation()}
-            catch(cancelled:CancellationException){throw cancelled}
-            catch(error:Exception){
-                if(error is DriverServiceException && error.sessionRejected){
-                    clearSession("Your session expired. Sign in again.")
-                }
-                else mutable.value=mutable.value.copy(error=if(error is DriverServiceException)error.message else "The action could not be confirmed. Check your connection and refresh before retrying.")
-            }finally{mutable.value=mutable.value.copy(loading=false)}
+        viewModelScope.launch { runWork(operation) }
+    }
+    private suspend fun runWork(operation: suspend () -> Unit) {
+        try {
+            operation()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            if (error is DriverServiceException && error.sessionRejected) {
+                clearSession("Your session expired. Sign in again.")
+            } else {
+                val message = if (error is DriverServiceException) error.message
+                    else "The action could not be confirmed. Check your connection and refresh before retrying."
+                mutable.value = mutable.value.copy(error = message)
+            }
+        } finally {
+            mutable.value = mutable.value.copy(loading = false)
         }
     }
     private suspend fun serviceStatus() {
@@ -75,10 +92,11 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
         )
     }
     fun refreshServiceStatus()=work {serviceStatus()}
-    fun requestCode(email:String)=work {
+    fun requestCode(email:String, registering:Boolean=false)=work {
         if(mutable.value.resendAt>System.currentTimeMillis())throw DriverServiceException(429,"Please wait before requesting another code.")
         serviceStatus()
         if(mutable.value.emailSignInOpen!=true)throw DriverServiceException(503,"Driver email sign-in is not available yet. Please check again later.")
+        if(registering && mutable.value.registrationOpen != true)throw DriverServiceException(503,"New driver applications are paused.")
         val result=api.request("/auth/email-challenges","POST",json=JSONObject().put("email",email.trim()))
         mutable.value=mutable.value.copy(challengeId=result.getString("challengeId"),challengeEmail=email.trim(),resendAt=System.currentTimeMillis()+result.optInt("cooldownSeconds",60).coerceIn(30,300)*1000L,demoCode=if(BuildConfig.DRIVER_SERVICE_TEST)result.optString("demoCode").takeIf {it.isNotBlank()} else null)
     }

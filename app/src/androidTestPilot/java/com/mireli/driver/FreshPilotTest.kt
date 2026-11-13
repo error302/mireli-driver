@@ -38,7 +38,11 @@ class FreshPilotTest {
         assertFalse(status.getBoolean("simulation"))
         assertEquals(ThemeMode.LIGHT,ThemePreference(rule.activity).mode)
         rule.onNodeWithTag("theme_light").assertExists()
-        rule.onNodeWithText("Mombasa · SGR transfers").assertExists()
+        rule.waitUntil(35_000) { rule.onAllNodesWithTag("driver_welcome").fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithTag("driver_welcome_register").performScrollTo().performClick()
+        rule.onNodeWithText("Register to drive").assertIsDisplayed()
+        rule.onNodeWithContentDescription("Back to welcome").performClick()
+        rule.onNodeWithTag("driver_welcome_sign_in").performScrollTo().performClick()
         rule.onNodeWithTag("driver_sign_in_title").assertIsDisplayed()
         rule.onNodeWithTag("driver_email_field").assertIsDisplayed()
         rule.onNodeWithTag("driver_send_code").assertIsDisplayed()
@@ -49,15 +53,20 @@ class FreshPilotTest {
             rule.onNodeWithText("Driver sign-in is closed").assertIsDisplayed()
             rule.onNode(hasScrollAction()).performScrollToIndex(0)
         }
-        rule.onAllNodesWithText("Appearance").assertCountEquals(1)
         rule.onAllNodesWithText("PREVIEW",substring=true).assertCountEquals(0)
         capture("fresh-signin-light")
-        rule.onNodeWithContentDescription("Dark mode").performClick()
+        fun chooseAppearance(label: String) {
+            rule.onNode(hasScrollAction()).performScrollToNode(hasText("Appearance"))
+            rule.onNodeWithText("Appearance").performClick()
+            rule.onNodeWithText(label).performClick()
+            rule.onNodeWithText("Done").performClick()
+        }
+        chooseAppearance("Dark")
         rule.waitUntil(10000){rule.onAllNodesWithTag("theme_dark").fetchSemanticsNodes().isNotEmpty()}
         rule.activityRule.scenario.recreate()
         rule.onNodeWithTag("theme_dark").assertExists();assertEquals(ThemeMode.DARK,ThemePreference(rule.activity).mode)
         capture("fresh-signin-dark")
-        rule.onNodeWithContentDescription("Dark mode").performClick()
+        chooseAppearance("Light")
         rule.waitUntil(10000){rule.onAllNodesWithTag("theme_light").fetchSemanticsNodes().isNotEmpty()}
     }
 }

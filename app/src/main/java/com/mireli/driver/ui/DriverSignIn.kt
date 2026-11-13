@@ -9,6 +9,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
@@ -51,10 +53,13 @@ fun DriverSignInScreen(
     onClose: (() -> Unit)? = null,
     supportAddressFailed: Boolean = false,
     onSupport: () -> Unit = {},
+    registering: Boolean = false,
+    onBackToWelcome: (() -> Unit)? = null,
 ) {
     val verifying = state.challengeId != null
     val signInOpen = state.emailSignInOpen == true
-    val canRequest = signInOpen && !state.loading && email.isNotBlank()
+    val canEnterEmail = signInOpen && (!registering || state.registrationOpen == true)
+    val canRequest = canEnterEmail && !state.loading && email.isNotBlank()
     val canVerify = !state.loading && code.length == 6
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
@@ -73,6 +78,9 @@ fun DriverSignInScreen(
     item {
         Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically) {
+            if (onBackToWelcome != null) IconButton(onClick = onBackToWelcome, enabled = !state.loading) {
+                Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back to welcome", tint = MaterialTheme.colorScheme.secondary)
+            }
             Surface(shape = MaterialTheme.shapes.small, color = Color.White) {
                 Image(painterResource(R.drawable.mireli_driver_logo), null, Modifier.size(34.dp))
             }
@@ -87,10 +95,11 @@ fun DriverSignInScreen(
     item {
             Column(Modifier.fillMaxWidth().padding(horizontal = 26.dp).padding(top = 44.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text(if (verifying) "Check your email" else "Sign in to drive",
+                Text(if (verifying) "Check your email" else if (registering) "Register to drive" else "Sign in to drive",
                     Modifier.testTag("driver_sign_in_title"), style = MaterialTheme.typography.displaySmall,
                     color = MaterialTheme.colorScheme.secondary)
-                if (!verifying) Text("Enter your email to receive a sign-in code.",
+                if (!verifying) Text(if (registering) "Verify your email to start your driver application."
+                    else "Enter your email to receive a sign-in code.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (BuildConfig.DRIVER_SERVICE_TEST) {
                     Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.secondaryContainer) {
@@ -120,7 +129,7 @@ fun DriverSignInScreen(
                                 }
                             }),
                             singleLine = true,
-                            enabled = signInOpen && !state.loading,
+                            enabled = canEnterEmail && !state.loading,
                             colors = departureFieldColors(),
                             modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp).focusRequester(emailFocus)
                                 .testTag("driver_email_field")
@@ -131,7 +140,13 @@ fun DriverSignInScreen(
                         enabled = canRequest,
                         modifier = Modifier.fillMaxWidth().testTag("driver_send_code")
                     ) {
-                        Text(if (state.loading) "Checking sign-in…" else if (signInOpen) "Send sign-in code" else "Sign-in unavailable",
+                        Text(when {
+                            state.loading -> "Checking sign-in…"
+                            canEnterEmail && registering -> "Send verification code"
+                            canEnterEmail -> "Send sign-in code"
+                            registering -> "Registration unavailable"
+                            else -> "Sign-in unavailable"
+                        },
                             style = MaterialTheme.typography.titleMedium)
                     }
                 } else {
@@ -180,7 +195,7 @@ fun DriverSignInScreen(
                     }
                 }
 
-                if (signInOpen && state.registrationOpen == true && !verifying) {
+                if (onBackToWelcome == null && !registering && signInOpen && state.registrationOpen == true && !verifying) {
                     TextButton(onClick = {
                         scope.launch {
                             list.animateScrollToItem(1)

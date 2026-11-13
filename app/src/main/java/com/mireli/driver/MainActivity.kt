@@ -13,7 +13,7 @@ class MainActivity : ComponentActivity() {
         when(ThemePreference(this).mode){
             ThemeMode.LIGHT->setTheme(R.style.Theme_Mireli_Light)
             ThemeMode.DARK->setTheme(R.style.Theme_Mireli_Dark)
-            ThemeMode.SYSTEM->Unit
+            ThemeMode.SYSTEM->setTheme(R.style.Theme_Mireli)
         }
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()

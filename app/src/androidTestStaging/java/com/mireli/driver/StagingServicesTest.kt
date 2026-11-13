@@ -43,6 +43,8 @@ class StagingServicesTest {
         val email=arguments.getString("fixtureEmail")
         org.junit.Assume.assumeTrue("Requires the guarded local synthetic fixture",email!=null)
         val tripId=arguments.getString("fixtureTripId")!!;val bookingCode=arguments.getString("fixtureCode")!!
+        rule.waitUntil(35000){rule.onAllNodesWithTag("driver_welcome_sign_in").fetchSemanticsNodes().isNotEmpty()}
+        rule.onNodeWithTag("driver_welcome_sign_in").performScrollTo().performClick()
         rule.waitUntil(20000){rule.onAllNodes(hasText("Email address") and isEnabled()).fetchSemanticsNodes().isNotEmpty()}
         rule.onNodeWithText("Email address").performTextInput(email!!)
         rule.onNodeWithTag("driver_send_code").performScrollTo().assertIsEnabled().performClick()
@@ -94,6 +96,8 @@ class StagingServicesTest {
         val api=DriverApi();assertTrue(runBlocking {api.request("/status")}.getBoolean("simulation"))
         DriverSessionStore(rule.activity).clear()
         val phone="+254700"+System.currentTimeMillis().toString().takeLast(6)
+        rule.waitUntil(35000){rule.onAllNodesWithTag("driver_welcome_register").fetchSemanticsNodes().isNotEmpty()}
+        rule.onNodeWithTag("driver_welcome_register").performScrollTo().performClick()
         rule.waitUntil(20000){rule.onAllNodes(hasText("Email address") and isEnabled()).fetchSemanticsNodes().isNotEmpty()}
         rule.onNodeWithText("Email address").performTextInput("driver-${System.currentTimeMillis()}@example.com")
         rule.onNodeWithTag("driver_send_code").performScrollTo().assertIsEnabled().performClick()
@@ -107,8 +111,7 @@ class StagingServicesTest {
         rule.onNodeWithText("6-digit verification code").performScrollTo().performTextReplacement(code)
         closeSoftKeyboard()
         rule.onNodeWithText("Verify and continue").performScrollTo().assertIsEnabled().performClick()
-        rule.waitUntil(30000){rule.onAllNodesWithText("Continue onboarding").fetchSemanticsNodes().isNotEmpty()}
-        rule.onNodeWithText("Continue onboarding").performClick()
+        rule.waitUntil(30000){rule.onAllNodesWithText("Driver account").fetchSemanticsNodes().isNotEmpty()}
         awaitAction("Driver & vehicle")
         rule.onNodeWithText("Driver & vehicle").performClick()
         awaitAction("Kenyan contact phone")
@@ -146,6 +149,8 @@ class StagingServicesTest {
             SemanticsMatcher.expectValue(SemanticsProperties.Role, androidx.compose.ui.semantics.Role.Tab))
             .performClick()
         reveal("Sign out");rule.onNodeWithText("Sign out").performClick()
+        rule.waitUntil(30000){rule.onAllNodesWithTag("driver_welcome_sign_in").fetchSemanticsNodes().isNotEmpty()}
+        rule.onNodeWithTag("driver_welcome_sign_in").performScrollTo().performClick()
         rule.waitUntil(30000){rule.onAllNodes(hasTestTag("driver_email_field") and isEnabled()).fetchSemanticsNodes().isNotEmpty()}
         assertNull(DriverSessionStore(rule.activity).load())
         val exception=runCatching{runBlocking {api.request("/me",token=session!!.token)}}.exceptionOrNull()
