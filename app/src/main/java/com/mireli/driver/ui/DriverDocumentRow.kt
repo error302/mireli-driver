@@ -25,6 +25,7 @@ internal fun DriverDocumentRow(
     upload: DocumentUpload?,
     modifier: Modifier = Modifier,
     showRequirement: Boolean = true,
+    onRemove: (() -> Unit)? = null,
     onUpload: (String) -> Unit
 ) {
     val title = requirement.getString("title")
@@ -51,7 +52,7 @@ internal fun DriverDocumentRow(
                 val requirementLabel = if (requirement.getBoolean("required")) "Required" else "Optional"
                 Text(if (showRequirement) "$requirementLabel · $status" else status,
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (approved) colors.primary else colors.onSurfaceVariant)
+                    color = colors.onSurfaceVariant)
             }
             if (canEdit) TextButton(
                 onClick = {
@@ -61,6 +62,9 @@ internal fun DriverDocumentRow(
             ) {
                 Text(if (editingExpiry) "Cancel" else if (evidence == null) "Upload" else "Replace")
             }
+        }
+        if (onRemove != null) {
+            TextButton(onClick = onRemove) { Text("Remove document", color = colors.error) }
         }
         (evidence?.opt("reviewReason") as? String)?.takeIf { it.isNotBlank() }?.let { DepartureNote(it) }
         if (graceUntil != null && status == "Expired") DepartureNote("Replace by ${graceUntil.take(10)} to keep your verified status.")
@@ -87,6 +91,5 @@ internal fun DriverDocumentRow(
         }
         LaunchedEffect(upload?.uploaded) { if (upload?.uploaded == true) editingExpiry = false }
         if (upload?.uploading == true) LinearProgressIndicator(Modifier.fillMaxWidth(), color = colors.secondary)
-        HorizontalDivider(Modifier.padding(top = 4.dp))
     }
 }

@@ -1,5 +1,6 @@
 package com.mireli.driver
 
+import android.net.Uri
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.mutableStateOf
@@ -7,6 +8,7 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.mireli.driver.ui.DepartureSettlement
 import com.mireli.driver.ui.DriverDocumentRow
+import com.mireli.driver.ui.DocumentSelectionDialog
 import com.mireli.driver.ui.DriverHomeDashboard
 import com.mireli.driver.ui.MireliTheme
 import org.json.JSONObject
@@ -21,9 +23,8 @@ class DeparturePagesTest {
         var opened = false
         rule.setContent { MireliTheme { Surface {
             DriverHomeDashboard(name = "Pilot Driver", eligible = false, verified = false, applicationStatus = "draft",
-                tripsCurrent = true, trips = emptyList(), activeNavigation = null, onRefresh = {}, onOpenTrips = {},
-                onOpenAccount = {}, onOpenTrip = {}, onStartNavigation = { _, _ -> }, onOpenMap = { opened = true },
-                onOpenEarnings = {})
+                tripsCurrent = true, trips = emptyList(), onRefresh = {}, onOpenTrips = {},
+                onOpenAccount = {}, onOpenTrip = {}, onStartNavigation = { _, _ -> }, onOpenMap = { opened = true })
         } } }
         rule.onNodeWithText("Continue onboarding").assertIsDisplayed()
         rule.onNodeWithText("Live map").performClick()
@@ -49,6 +50,27 @@ class DeparturePagesTest {
         assertEquals("2099-02-28", chosen)
         rule.runOnIdle { upload.value = DocumentUpload("licence", message = "Choose a smaller file.") }
         rule.onNodeWithText("Choose a smaller file.").assertIsDisplayed()
+    }
+
+    @Test fun removingASelectedFileDoesNotUploadIt() {
+        val visible = mutableStateOf(true)
+        var uploaded = false
+        rule.setContent {
+            MireliTheme {
+                if (visible.value) DocumentSelectionDialog(
+                    title = "Driving licence",
+                    uri = Uri.parse("content://com.mireli.test/selection"),
+                    expires = "2099-02-28",
+                    canUpload = true,
+                    onRemove = { visible.value = false },
+                    onUpload = { uploaded = true },
+                )
+            }
+        }
+        rule.onNodeWithText("Driving licence").assertIsDisplayed()
+        rule.onNodeWithText("Remove selected file").performClick()
+        rule.onNodeWithText("Review file").assertDoesNotExist()
+        assertEquals(false, uploaded)
     }
 
     @Test fun hidingBalancesAlsoHidesExpandedSettlementAmounts() {

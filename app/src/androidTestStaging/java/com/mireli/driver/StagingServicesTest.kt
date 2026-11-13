@@ -26,7 +26,7 @@ class StagingServicesTest {
     private fun awaitAction(text: String) {
         rule.waitUntil(30000) {
             runCatching {
-                reveal(text)
+                if (rule.onAllNodesWithText(text).fetchSemanticsNodes().isEmpty()) reveal(text)
                 rule.onAllNodes(hasText(text) and isEnabled()).fetchSemanticsNodes().isNotEmpty()
             }.getOrDefault(false)
         }
@@ -60,8 +60,8 @@ class StagingServicesTest {
         val api = DriverApi()
         val driverId = runBlocking { api.request("/me", token = session.token) }.getJSONObject("driver").getString("id")
         rule.onNodeWithText("Trips",useUnmergedTree=true).performClick()
-        reveal("Accept assignment");screenshot("connected-assignment")
-        reveal("Accept assignment");rule.onNodeWithText("Accept assignment").performClick();rule.onNodeWithText("Confirm").performClick()
+        screenshot("connected-assignment")
+        rule.onNodeWithText("Accept assignment").performClick();rule.onNodeWithText("Confirm").performClick()
         if (arguments.getString("fixtureDropAccept") == "true") {
             awaitAction("Check saved action")
             val pending = checkNotNull(sessions.savedAction(driverId))
@@ -71,7 +71,7 @@ class StagingServicesTest {
             rule.onNodeWithText("Check saved action").assertIsEnabled().performClick()
         }
         awaitAction("Arrived at pickup")
-        reveal("Arrived at pickup");rule.onNodeWithText("Arrived at pickup").performClick();rule.onNodeWithText("Confirm").performClick()
+        rule.onNodeWithText("Arrived at pickup").performClick();rule.onNodeWithText("Confirm").performClick()
         awaitAction("Start journey")
         reveal("View passenger manifest");rule.onNodeWithText("View passenger manifest").performClick()
         reveal("Board this party");rule.onNodeWithText("Board this party").performClick()
@@ -80,9 +80,9 @@ class StagingServicesTest {
         rule.onNodeWithText("Confirm").performClick()
         rule.waitUntil(30000){rule.onAllNodesWithText("2 boarded · 0 no-show · 0 waiting").fetchSemanticsNodes().isNotEmpty()}
         screenshot("connected-boarding")
-        reveal("Start journey");rule.onNodeWithText("Start journey").performClick();rule.onNodeWithText("Confirm").performClick()
-        awaitAction("Complete delivered journey")
-        reveal("Complete delivered journey");rule.onNodeWithText("Complete delivered journey").performClick();rule.onNodeWithText("Confirm").performClick()
+        rule.onNodeWithText("Start journey").performClick();rule.onNodeWithText("Confirm").performClick()
+        awaitAction("Complete trip")
+        rule.onNodeWithText("Complete trip").performClick();rule.onNodeWithText("Confirm").performClick()
         rule.waitUntil(30000){runBlocking{api.request("/trips",token=session.token)}.getJSONArray("trips").let{rows->(0 until rows.length()).any{rows.getJSONObject(it).getString("id")==tripId&&rows.getJSONObject(it).getString("phase")=="completed"}}}
         assertFalse(runBlocking{api.request("/trips",token=session.token)}.getJSONArray("trips").let{rows->(0 until rows.length()).first{rows.getJSONObject(it).getString("id")==tripId}.let{rows.getJSONObject(it).getJSONArray("passengers").length()>0}})
         rule.onNodeWithText("Earnings",useUnmergedTree=true).performClick()

@@ -1,6 +1,7 @@
 package com.mireli.driver.domain
 
 import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
 
@@ -19,15 +20,16 @@ internal object SgrTimetable {
 
     data class Event(val service: Service, val at: Instant)
 
+    fun eventsOn(services: List<Service>, date: LocalDate): List<Event> =
+        services.mapNotNull { service ->
+            val originDate = date.minusDays(service.dayOffset)
+            if (originDate.dayOfWeek.value % 7 !in service.serviceDays) return@mapNotNull null
+            Event(service, date.atTime(service.clock).atZone(zone).toInstant())
+        }.sortedBy(Event::at)
+
     fun upcoming(services: List<Service>, now: Instant): List<Event> {
         val today = now.atZone(zone).toLocalDate()
-        return (-1L..7L).flatMap { offset ->
-            val originDate = today.plusDays(offset)
-            services.mapNotNull { service ->
-                if (originDate.dayOfWeek.value % 7 !in service.serviceDays) return@mapNotNull null
-                val at = originDate.plusDays(service.dayOffset).atTime(service.clock).atZone(zone).toInstant()
-                if (at < now.minusSeconds(45 * 60)) null else Event(service, at)
-            }
-        }.sortedBy { it.at }
+        return (-1L..8L).flatMap { offset -> eventsOn(services, today.plusDays(offset)) }
+            .filter { it.at >= now.minusSeconds(45 * 60) }
     }
 }

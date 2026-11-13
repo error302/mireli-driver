@@ -389,6 +389,14 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
                 message = "Document received. Refresh your account to update your application status."))
         }
     }
+    fun removeDocument(id: String) = work {
+        val current = mutable.value.onboarding ?: return@work
+        val token = session?.token ?: return@work
+        val updated = api.request("/documents/$id", "DELETE", token, json = JSONObject()
+            .put("expectedVersion", current.getJSONObject("application").getInt("version")))
+        mutable.value = mutable.value.copy(onboarding = updated, documentUpload = null)
+    }
+
     fun submit(accepted:Boolean)=work {
         val current=mutable.value.onboarding?:return@work
         val updated=api.request("/onboarding/submissions","POST",session?.token,json=JSONObject().put("expectedVersion",current.getJSONObject("application").getInt("version"))

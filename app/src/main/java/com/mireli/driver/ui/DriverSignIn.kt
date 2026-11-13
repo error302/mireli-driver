@@ -234,7 +234,7 @@ internal fun DepartureButton(
     content: @Composable RowScope.() -> Unit
 ) {
     val interaction = remember { MutableInteractionSource() }
-    Button(onClick = onClick, modifier = modifier.heightIn(min = 50.dp).pressScale(interaction),
+    Button(onClick = onClick, modifier = modifier.heightIn(min = MireliDesign.PrimaryActionHeight).pressScale(interaction),
         enabled = enabled, shape = CircleShape, interactionSource = interaction,
         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary,
             contentColor = MaterialTheme.colorScheme.onSecondary), content = content)

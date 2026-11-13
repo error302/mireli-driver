@@ -5,15 +5,12 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -43,55 +40,53 @@ internal fun MireliDriverCard(
         photo.jpeg?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() }
     }
     var confirmRemove by rememberSaveable { mutableStateOf(false) }
-    val mint = Color(0xFFB2F1DE)
-    val paleBlue = Color(0xFFD1E6FF)
+    val colors = MaterialTheme.colorScheme
 
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp))
-            .background(Brush.linearGradient(listOf(Color(0xFF102F54), Color(0xFF10495B), Color(0xFF0D574C))))
-            .padding(horizontal = 18.dp, vertical = 16.dp),
+        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large)
+            .background(colors.surfaceContainerLow)
+            .padding(MireliDesign.Space.md),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("Mireli Driver", color = mint, style = MaterialTheme.typography.titleSmall)
+        Text("Mireli Driver", color = colors.onSurfaceVariant, style = MaterialTheme.typography.titleSmall)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(Modifier.size(66.dp).clip(CircleShape).background(paleBlue), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(66.dp).clip(CircleShape).background(colors.surfaceContainerHighest), contentAlignment = Alignment.Center) {
                 if (image != null) {
                     Image(image, "Your profile photo", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                 } else {
                     val initials = name?.trim()?.split(Regex("""\s+"""))?.take(2)
                         ?.joinToString("") { it.take(1).uppercase() } ?: "M"
-                    Text(initials, color = Color(0xFF102F54), style = MaterialTheme.typography.titleLarge)
+                    Text(initials, color = colors.onSurface, style = MaterialTheme.typography.titleLarge)
                 }
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(name ?: "Your driver profile", Modifier.weight(1f, fill = false),
-                        color = Color.White, style = MaterialTheme.typography.headlineSmall)
+                        color = colors.onSurface, style = MaterialTheme.typography.headlineSmall)
                     if (verified) VerifiedBadge(verified = true, compact = true)
                 }
                 if (vehicle.isNotBlank()) {
-                    Text(vehicle, color = paleBlue, style = MaterialTheme.typography.bodySmall)
+                    Text(vehicle, color = colors.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
-        HorizontalDivider(color = Color.White.copy(alpha = .24f))
         Text(if (eligible) "Eligible for new assignments" else when (applicationStatus) {
             "submitted" -> "Application in review"
             "changes_requested" -> "Changes requested"
             "approved" -> "Assignments currently unavailable"
             "draft" -> "Application draft"
             else -> "Approval required"
-        }, color = if (eligible) mint else paleBlue, style = MaterialTheme.typography.labelLarge)
+        }, color = colors.onSurface, style = MaterialTheme.typography.labelLarge)
         if (photo.loading) LinearProgressIndicator(
-            Modifier.fillMaxWidth(), color = mint, trackColor = Color.White.copy(alpha = .2f)
+            Modifier.fillMaxWidth(), color = colors.secondary, trackColor = colors.surfaceContainerHighest
         )
         photo.message?.let { message ->
             Text(message, Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                color = if (photo.failed) Color(0xFFFFD7CB) else mint, style = MaterialTheme.typography.bodySmall)
+                color = if (photo.failed) colors.error else colors.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            val actions = ButtonDefaults.textButtonColors(contentColor = Color.White,
-                disabledContentColor = Color.White.copy(alpha = .55f))
+            val actions = ButtonDefaults.textButtonColors(contentColor = colors.secondary,
+                disabledContentColor = colors.onSurfaceVariant)
             TextButton(onClick = onPickPhoto, enabled = canChangePhoto && !photo.loading, colors = actions) {
                 Text(if (image == null) "Add profile photo" else "Change photo")
             }

@@ -39,7 +39,6 @@ internal fun DepartureNote(text: String) {
 @Composable
 internal fun DepartureSection(title: String) {
     Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        HorizontalDivider()
         Text(title, Modifier.semantics { heading() }, style = MaterialTheme.typography.titleLarge)
     }
 }
@@ -100,7 +99,7 @@ internal fun DepartureTripTabs(history: Boolean, onSelect: (Boolean) -> Unit) {
                     onClick = { onSelect(index == 1) }),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Box(Modifier.heightIn(min = 46.dp).padding(horizontal = 4.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
+                Box(Modifier.heightIn(min = MireliDesign.TouchTarget).padding(horizontal = 4.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
                     Text(title, style = MaterialTheme.typography.labelLarge,
                         color = if (selected) colors.secondary else colors.onSurfaceVariant)
                 }
@@ -114,17 +113,17 @@ internal fun DepartureTripTabs(history: Boolean, onSelect: (Boolean) -> Unit) {
 internal fun DepartureAmount(label: String, amount: String) {
     Column(Modifier.padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         DepartureNote(label)
-        Text(amount, style = MaterialTheme.typography.displaySmall, color = MaterialTheme.colorScheme.secondary)
+        Text(amount, style = MaterialTheme.typography.displaySmall, color = MaterialTheme.colorScheme.primary)
     }
 }
 
 @Composable
-internal fun DepartureValueRow(label: String, value: String, confirmed: Boolean = false) {
+internal fun DepartureValueRow(label: String, value: String) {
     val colors = MaterialTheme.colorScheme
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.labelLarge, color = if (confirmed) colors.primary else colors.onSurface)
+        Text(value, style = MaterialTheme.typography.labelLarge, color = colors.onSurface)
     }
 }
 
@@ -141,8 +140,7 @@ internal fun DepartureSettlement(line: JSONObject, hideBalance: Boolean, modifie
                 line.optString("failureReason").takeIf { it.isNotBlank() && it != "null" }?.let { DepartureNote(it) }
             }
         }
-        DepartureValueRow(status.settlementLabel(), shown("netMinor"), confirmed = status == "completed")
-        HorizontalDivider(Modifier.padding(top = 8.dp))
+        DepartureValueRow(status.settlementLabel(), shown("netMinor"))
     }
 }
 

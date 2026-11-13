@@ -91,12 +91,12 @@ internal fun StationLines(modifier: Modifier = Modifier) {
 
 @Composable
 internal fun DriverNotice(icon: ImageVector, title: String, detail: String) {
-    Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
+    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerLow) {
         Row(Modifier.fillMaxWidth().padding(14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Icon(icon, null, tint = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.size(22.dp))
+            Icon(icon, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(22.dp))
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(title, color = MaterialTheme.colorScheme.onSecondaryContainer, style = MaterialTheme.typography.titleMedium)
-                Text(detail, color = MaterialTheme.colorScheme.onSecondaryContainer, style = MaterialTheme.typography.bodySmall)
+                Text(title, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleMedium)
+                Text(detail, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodySmall)
             }
         }
     }
@@ -104,28 +104,22 @@ internal fun DriverNotice(icon: ImageVector, title: String, detail: String) {
 
 @Composable
 internal fun TransferStatus(phase: String) {
-    val (label, icon) = when (phase) {
-        "assigned" -> "New assignment" to MireliIcons.Calendar
-        "accepted" -> "Pickup pending" to MireliIcons.LocationOn
-        "at_pickup" -> "Boarding" to MireliIcons.Groups
-        "in_progress" -> "On the road" to MireliIcons.DirectionsCar
-        "completed" -> "Trip completed" to MireliIcons.CheckCircleOutline
-        "cancelled" -> "Cancelled" to MireliIcons.Cancel
-        "declined" -> "Declined" to MireliIcons.Cancel
-        else -> "Status unavailable" to MireliIcons.Info
+    val label = when (phase) {
+        "assigned" -> "New assignment"
+        "accepted" -> "Pickup pending"
+        "at_pickup" -> "Boarding"
+        "in_progress" -> "On the road"
+        "completed" -> "Trip completed"
+        "cancelled" -> "Cancelled"
+        "declined" -> "Declined"
+        else -> "Status unavailable"
     }
-    val inactive = phase in listOf("cancelled", "declined")
-    val colors = MaterialTheme.colorScheme
-    val textColor = if (inactive) colors.onSurfaceVariant else colors.onSecondaryContainer
-    Row(Modifier.padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, null, tint = if (inactive) textColor else colors.primary, modifier = Modifier.size(18.dp))
-        Text(label, color = colors.onSurface, style = MaterialTheme.typography.labelLarge)
-    }
+    Text(label, color = if (phase == "in_progress") MaterialTheme.colorScheme.primary
+        else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
 }
 
 @Composable
-internal fun TransferSchedule(trip: JSONObject, useDepartureColor: Boolean = false) {
+internal fun TransferSchedule(trip: JSONObject) {
     val colors = MaterialTheme.colorScheme
     val departure = trip.departureInstant()
     val service = when (trip.optString("serviceType").lowercase(Locale.ROOT)) {
@@ -135,8 +129,8 @@ internal fun TransferSchedule(trip: JSONObject, useDepartureColor: Boolean = fal
     }
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(if (departure == null) "Departure time pending" else "${DepartureTime.format(departure)} EAT",
-            style = MaterialTheme.typography.headlineMedium.copy(fontFeatureSettings = MireliDesign.NumberFeatures),
-            color = if (useDepartureColor) colors.secondary else colors.onSurface)
+            style = MaterialTheme.typography.drivingMetric,
+            color = colors.onSurface)
         Text(if (departure == null) service else "${DepartureDay.format(departure)} • $service",
             style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
     }

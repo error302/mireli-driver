@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -99,8 +100,7 @@ private const val ROUTE_MAIN_ID = "mireli-route-main"
 private const val ROUTED_SOURCE_ID = "mireli-route-done-source"
 private const val ROUTED_LAYER_ID = "mireli-route-done"
 
-private const val EMERALD = "#0B826E"
-private const val EMERALD_LIGHT = "#17B294"
+private const val AccuracyBlue = "#3B6F9B"
 
 /** Frame time for the marker interpolation loop. */
 private const val TICK_MS = 55L
@@ -180,6 +180,7 @@ internal fun NavigationMap(
     rotateVehicle: Boolean = true,
     satelliteToken: String? = null,
     onLongPress: ((GeoPoint) -> Unit)? = null,
+    controlsBottomInset: Dp = MireliDesign.Space.xs,
 ) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
@@ -428,7 +429,7 @@ internal fun NavigationMap(
         if (controls) {
             Column(
                 // Sit above the driving sheet, not behind it.
-                Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 168.dp),
+                Modifier.align(Alignment.BottomEnd).padding(end = MireliDesign.Space.xs, bottom = controlsBottomInset),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 horizontalAlignment = Alignment.End
             ) {
@@ -449,8 +450,7 @@ internal fun NavigationMap(
                     Box {
                     Surface(
                         color = MaterialTheme.colorScheme.surface,
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
-                        shadowElevation = 2.dp,
+                        shape = MaterialTheme.shapes.medium,
                         onClick = { layersOpen = true }
                     ) {
                         Row(
@@ -458,7 +458,7 @@ internal fun NavigationMap(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Icon(MireliIcons.Map, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                            Icon(MireliIcons.Map, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.secondary)
                             Text("Layers · ${activeLayer.label}", style = MaterialTheme.typography.labelMedium)
                         }
                     }
@@ -476,7 +476,7 @@ internal fun NavigationMap(
                         }
                     }
                     }
-                    Surface(color = MaterialTheme.colorScheme.surface, shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp), shadowElevation = 2.dp) {
+                    Surface(color = MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.medium) {
                         Column {
                             MapZoomButton("+") { map?.animateCamera(CameraUpdateFactory.zoomIn()) }
                             MapZoomButton("−") { map?.animateCamera(CameraUpdateFactory.zoomOut()) }
@@ -490,7 +490,7 @@ internal fun NavigationMap(
 
 @Composable
 private fun MapZoomButton(label: String, onClick: () -> Unit) {
-    androidx.compose.material3.TextButton(onClick = onClick, modifier = Modifier.size(width = 44.dp, height = 40.dp)) {
+    androidx.compose.material3.TextButton(onClick = onClick, modifier = Modifier.size(MireliDesign.TouchTarget)) {
         Text(label, style = MaterialTheme.typography.titleMedium)
     }
 }
@@ -504,12 +504,12 @@ private fun installLayers(style: Style, car: Bitmap, shadow: Bitmap, halo: Bitma
     style.addSource(GeoJsonSource(ACCURACY_SOURCE_ID))
     style.addLayer(
         FillLayer(ACCURACY_FILL_ID, ACCURACY_SOURCE_ID).withProperties(
-            PropertyFactory.fillColor(EMERALD), PropertyFactory.fillOpacity(0.12f)
+            PropertyFactory.fillColor(AccuracyBlue), PropertyFactory.fillOpacity(0.12f)
         )
     )
     style.addLayer(
         LineLayer(ACCURACY_EDGE_ID, ACCURACY_SOURCE_ID).withProperties(
-            PropertyFactory.lineColor(EMERALD), PropertyFactory.lineOpacity(0.45f),
+            PropertyFactory.lineColor(AccuracyBlue), PropertyFactory.lineOpacity(0.45f),
             PropertyFactory.lineWidth(1.5f)
         )
     )
@@ -534,7 +534,7 @@ private fun installLayers(style: Style, car: Bitmap, shadow: Bitmap, halo: Bitma
     )
     style.addLayer(
         LineLayer(ROUTE_MAIN_ID, ROUTE_SOURCE_ID).withProperties(
-            PropertyFactory.lineColor(EMERALD_LIGHT),
+            PropertyFactory.lineColor(RouteBlue),
             PropertyFactory.lineWidth(zoomWidth(5f, 14f)),
             PropertyFactory.lineCap("round"), PropertyFactory.lineJoin("round")
         )

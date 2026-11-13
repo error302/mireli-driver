@@ -146,14 +146,12 @@ private fun DesignPreview() {
                         applicationStatus = "approved",
                         tripsCurrent = true,
                         trips = trips,
-                        activeNavigation = null,
                         onOpenTrips = { tab = 2 },
                         onRefresh = { },
                         onOpenAccount = { },
                         onOpenTrip = { tab = 2 },
                         onStartNavigation = { _, stop -> navStop = stop },
-                        onOpenMap = { mapOnly = true },
-                        onOpenEarnings = { }
+                        onOpenMap = { mapOnly = true }
                     )
                 }
                 1 -> item {

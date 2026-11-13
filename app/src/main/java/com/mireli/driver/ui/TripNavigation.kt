@@ -282,7 +282,7 @@ internal fun openMaps(context:Context,url:String):Boolean {
             }
             if(routeLoading)LinearProgressIndicator(Modifier.fillMaxWidth())
             if(atStop)Text("You are at the assigned stop.",style=MaterialTheme.typography.titleMedium,color=MaterialTheme.colorScheme.primary)
-            else nextManeuver?.let{maneuver->ManeuverCard(maneuver,maneuverDistance,route!!)}
+            else nextManeuver?.let{maneuver->ManeuverCard(maneuver,maneuverDistance)}
             if (route != null && !usableGuidanceFix) {
                 Text("GPS signal is weak. Follow the highlighted route and road signs.",
                     style = MaterialTheme.typography.bodySmall)
@@ -320,12 +320,11 @@ internal fun openMaps(context:Context,url:String):Boolean {
         }){Text("Continue")}},dismissButton={TextButton(onClick={disclosure=false}){Text("Cancel")}})
 }
 
-@Composable private fun ManeuverCard(maneuver:RouteManeuver,distance:Int?,route:DriverRoute) {
-    Card(colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.primaryContainer)) {
+@Composable private fun ManeuverCard(maneuver:RouteManeuver,distance:Int?) {
+    Card(colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceContainer)) {
         Column(Modifier.fillMaxWidth().padding(16.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
-            Text("NEXT",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.primary)
             Text(maneuver.instruction,style=MaterialTheme.typography.titleMedium)
-            Text("${distanceLabel(distance?:maneuver.distanceMeters)} · ${route.durationSeconds/60} min remaining on this route",style=MaterialTheme.typography.bodySmall)
+            Text(distanceLabel(distance ?: maneuver.distanceMeters), style = MaterialTheme.typography.numericDetail)
         }
     }
 }

@@ -20,14 +20,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.ExperimentalTextApi
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.Font
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontVariation
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.mireli.driver.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -40,6 +33,8 @@ enum class ThemeMode(val label:Int) {
 
 /** Design tokens. Spacing follows an 8-point grid, with 4dp allowed for labels and hairlines. */
 internal object MireliDesign {
+    val TouchTarget = 48.dp
+    val PrimaryActionHeight = 56.dp
     val ControlRadius = 12.dp
     val PanelRadius = 20.dp
     val PanelPadding = 16.dp
@@ -78,65 +73,6 @@ class ThemePreference(context:Context) {
     suspend fun save(mode:ThemeMode)=withContext(Dispatchers.IO){check(preferences.edit().putString("theme_mode",mode.name).commit())}
 }
 
-private val LightColors=lightColorScheme(
-    primary=Color(0xFF0B826E),onPrimary=Color.White,primaryContainer=Color(0xFFE0F3EC),onPrimaryContainer=Color(0xFF06302A),
-    secondary=Color(0xFF1565A8),onSecondary=Color.White,secondaryContainer=Color(0xFFDFEDFA),onSecondaryContainer=Color(0xFF0B2E4E),
-    tertiary=Color(0xFFEF6C1A),onTertiary=Color.White,tertiaryContainer=Color(0xFFFFEBDD),onTertiaryContainer=Color(0xFF7A2C00),
-    background=Color(0xFFF7F9F8),onBackground=Color(0xFF101820),surface=Color.White,onSurface=Color(0xFF101820),
-    surfaceVariant=Color(0xFFEDF2EF),onSurfaceVariant=Color(0xFF5A6B66),
-    surfaceContainer=Color.White,surfaceContainerHigh=Color(0xFFF2F6F4),surfaceContainerHighest=Color(0xFFE8EFEB),
-    outline=Color(0xFF7F908B),outlineVariant=Color(0xFFD9E4DE))
-
-private val DarkColors=darkColorScheme(
-    primary=Color(0xFF4FD8B8),onPrimary=Color(0xFF00261F),primaryContainer=Color(0xFF0C3A31),onPrimaryContainer=Color(0xFFA9F2DF),
-    secondary=Color(0xFF9CC8EF),onSecondary=Color(0xFF0A2338),secondaryContainer=Color(0xFF173A5A),onSecondaryContainer=Color(0xFFD6E9FB),
-    tertiary=Color(0xFFFFB27A),onTertiary=Color(0xFF4A1E00),tertiaryContainer=Color(0xFF4A2A12),onTertiaryContainer=Color(0xFFFFD9BC),
-    background=Color(0xFF0B1116),onBackground=Color(0xFFE8F0F2),surface=Color(0xFF101820),onSurface=Color(0xFFE8F0F2),
-    surfaceVariant=Color(0xFF1B2A31),onSurfaceVariant=Color(0xFFA9BCC4),
-    surfaceContainer=Color(0xFF101820),surfaceContainerHigh=Color(0xFF16222A),surfaceContainerHighest=Color(0xFF1E2C35),
-    outline=Color(0xFF7A8E97),outlineVariant=Color(0xFF2C3F49))
-
-@OptIn(ExperimentalTextApi::class)
-private val MireliFont = FontFamily(
-    listOf(FontWeight.Normal, FontWeight.Medium, FontWeight.SemiBold, FontWeight.Bold).map { weight ->
-        Font(R.font.inter_variable, weight = weight,
-            variationSettings = FontVariation.Settings(FontVariation.weight(weight.weight)))
-    }
-)
-
-private fun mireliType(
-    size: Int,
-    leading: Int,
-    weight: FontWeight = FontWeight.Normal,
-    tracking: Double = 0.0,
-    tabular: Boolean = false,
-) = TextStyle(
-    fontFamily = MireliFont,
-    fontWeight = weight,
-    fontSize = size.sp,
-    lineHeight = leading.sp,
-    letterSpacing = tracking.sp,
-    fontFeatureSettings = if (tabular) MireliDesign.NumberFeatures else null,
-)
-
-private val MireliTypography = Typography(
-    displayLarge = mireliType(52, 57, FontWeight.Bold, -2.2, tabular = true),
-    displayMedium = mireliType(44, 49, FontWeight.Bold, -1.8, tabular = true),
-    displaySmall = mireliType(38, 43, FontWeight.Bold, -1.5, tabular = true),
-    headlineLarge = mireliType(34, 39, FontWeight.Bold, -1.2),
-    headlineMedium = mireliType(28, 34, FontWeight.Bold, -0.9),
-    headlineSmall = mireliType(23, 29, FontWeight.SemiBold, -0.5),
-    titleLarge = mireliType(20, 25, FontWeight.SemiBold, -0.4),
-    titleMedium = mireliType(17, 22, FontWeight.SemiBold, -0.3),
-    titleSmall = mireliType(15, 20, FontWeight.SemiBold, -0.1),
-    bodyLarge = mireliType(17, 24, tracking = -0.2),
-    bodyMedium = mireliType(15, 21, tracking = -0.1),
-    bodySmall = mireliType(13, 18),
-    labelLarge = mireliType(15, 20, FontWeight.SemiBold, -0.1, tabular = true),
-    labelMedium = mireliType(12, 17, FontWeight.Medium, tabular = true),
-    labelSmall = mireliType(11, 15, FontWeight.Medium, tabular = true),
-)
-
 private val MireliShapes=Shapes(
     extraSmall=RoundedCornerShape(8.dp),small=RoundedCornerShape(MireliDesign.Radius.tile),
     medium=RoundedCornerShape(MireliDesign.Radius.card),large=RoundedCornerShape(MireliDesign.Radius.hero))
@@ -155,7 +91,7 @@ private val LocalAppearance=staticCompositionLocalOf<Appearance>{error("MireliTh
     SideEffect {
         (context as? ComponentActivity)?.enableEdgeToEdge(
             statusBarStyle=SystemBarStyle.auto(android.graphics.Color.TRANSPARENT,android.graphics.Color.TRANSPARENT){dark},
-            navigationBarStyle=SystemBarStyle.auto(0xE6F7F9F8.toInt(),0xE60B1116.toInt()){dark})
+            navigationBarStyle=SystemBarStyle.auto(0xE6F7F8FA.toInt(),0xE60E1116.toInt()){dark})
     }
     val appearance=Appearance(mode,saving,failed){choice->
         if(!saving && choice!=mode){saving=true;failed=false;scope.launch{

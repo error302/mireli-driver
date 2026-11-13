@@ -17,8 +17,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -26,6 +24,8 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -345,11 +345,16 @@ internal fun DriverNavigationScreen(
     )
     val weakGuidance = !usableGuidanceFix && route != null
 
+    val colors = MaterialTheme.colorScheme
+    var sheetHeight by remember { mutableIntStateOf(0) }
+    val controlsInset = with(LocalDensity.current) { sheetHeight.toDp() } + MireliDesign.Space.xs
+
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         NavigationMap(
             target = mapTarget, location = current, fix = position.fix, route = route,
             modifier = Modifier.fillMaxSize(), interactive = true, follow = stop != null || simulated != null,
             satelliteToken = satelliteToken,
+            controlsBottomInset = controlsInset,
             onLongPress = if (stop == null && simulated == null) { point ->
                 focus.clearFocus()
                 clearPreview()
@@ -359,16 +364,16 @@ internal fun DriverNavigationScreen(
         )
 
         Column(
-            Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp),
+            Modifier.fillMaxWidth().statusBarsPadding().padding(MireliDesign.Space.xs),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Surface(shape = RoundedCornerShape(100), color = MaterialTheme.colorScheme.surface, shadowElevation = 3.dp) {
-                    IconButton(onClick = onClose, modifier = Modifier.size(42.dp)) {
+                Surface(shape = MaterialTheme.shapes.medium, color = colors.surfaceContainer) {
+                    IconButton(onClick = onClose, modifier = Modifier.size(MireliDesign.TouchTarget)) {
                         Icon(MireliIcons.Cancel, "End navigation", tint = MaterialTheme.colorScheme.onSurface)
                     }
                 }
-                Surface(shape = RoundedCornerShape(MireliDesign.Radius.chip), color = MaterialTheme.colorScheme.surface, shadowElevation = 3.dp) {
+                Surface(shape = RoundedCornerShape(MireliDesign.Radius.chip), color = colors.surfaceContainer) {
                     Text(
                         stop?.name ?: previewStop?.name ?: "Live map",
                         Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
@@ -376,7 +381,7 @@ internal fun DriverNavigationScreen(
                     )
                 }
                 if (simulated != null) {
-                    Surface(shape = RoundedCornerShape(100), color = MaterialTheme.colorScheme.tertiaryContainer) {
+                    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.tertiaryContainer) {
                         Text("SIMULATED", Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onTertiaryContainer)
@@ -384,15 +389,15 @@ internal fun DriverNavigationScreen(
                 }
             }
             if (stop == null && simulated == null) {
-                Surface(shape = RoundedCornerShape(MireliDesign.Radius.card), color = MaterialTheme.colorScheme.surface, shadowElevation = 3.dp) {
+                Surface(shape = RoundedCornerShape(MireliDesign.Radius.card), color = colors.surfaceContainer) {
                     Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Icon(MireliIcons.LocationOn, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                            Icon(MireliIcons.LocationOn, null, Modifier.size(18.dp), tint = colors.secondary)
                             androidx.compose.material3.TextField(
                                 value = searchQuery,
                                 onValueChange = { searchQuery = it.take(120); searchJob?.cancel(); searchResults = null; searchError = null },
                                 modifier = Modifier.weight(1f),
-                                placeholder = { Text(if (onSearch == null) "Search in Google Maps" else "Where are you going?", style = MaterialTheme.typography.bodyMedium) },
+                                placeholder = { Text(if (onSearch == null) "Search in Google Maps" else "Search destination", style = MaterialTheme.typography.bodyMedium) },
                                 singleLine = true,
                                 colors = androidx.compose.material3.TextFieldDefaults.colors(
                                     focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
@@ -415,24 +420,12 @@ internal fun DriverNavigationScreen(
                             if (previewStop != null || searchQuery.isNotEmpty()) {
                                 IconButton(onClick = {
                                     searchQuery = ""; clearPreview()
-                                }, modifier = Modifier.size(36.dp)) {
+                                }, modifier = Modifier.size(MireliDesign.TouchTarget)) {
                                     Icon(MireliIcons.Cancel, "Clear destination", Modifier.size(16.dp))
                                 }
                             }
                         }
-                        if (previewStop == null && searchQuery.isBlank()) {
-                            Row(
-                                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                listOf("Likoni Ferry", "Moi Airport Mombasa", "Fort Jesus").forEach { hint ->
-                                    androidx.compose.material3.AssistChip(
-                                        onClick = { searchQuery = hint; searchDestination(hint) },
-                                        label = { Text(hint, style = MaterialTheme.typography.labelMedium, maxLines = 1) }
-                                    )
-                                }
-                            }
-                        }
+
                     }
                 }
                 if (previewStop == null && !searching && (searchQuery.isBlank() || searchError != null)) {
@@ -453,17 +446,17 @@ internal fun DriverNavigationScreen(
                     }
                 }
                 searchResults?.let { results ->
-                    Surface(shape = RoundedCornerShape(MireliDesign.Radius.card), color = MaterialTheme.colorScheme.surface, shadowElevation = 4.dp) {
+                    Surface(shape = RoundedCornerShape(MireliDesign.Radius.card), color = colors.surfaceContainer) {
                         Column {
                             results.forEachIndexed { index, place ->
                                 if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                                 Row(
-                                    Modifier.fillMaxWidth().clickable { previewTo(place) }
+                                    Modifier.fillMaxWidth().heightIn(min = MireliDesign.TouchTarget).clickable { previewTo(place) }
                                         .padding(horizontal = 14.dp, vertical = 10.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
-                                    Icon(MireliIcons.LocationOn, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                                    Icon(MireliIcons.LocationOn, null, Modifier.size(16.dp), tint = colors.secondary)
                                     Column(Modifier.weight(1f)) {
                                         Text(place.name, style = MaterialTheme.typography.titleSmall, maxLines = 1)
                                         if (place.detail.isNotBlank()) Text(place.detail,
@@ -484,8 +477,8 @@ internal fun DriverNavigationScreen(
             if (destination != null && !atStop) {
                 Surface(
                     shape = RoundedCornerShape(MireliDesign.Radius.card),
-                    color = if (offRoute) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primary,
-                    shadowElevation = 4.dp
+                    color = if (offRoute) colors.errorContainer else colors.surfaceContainer,
+                    contentColor = if (offRoute) colors.onErrorContainer else colors.onSurface
                 ) {
                     Row(
                         Modifier.fillMaxWidth().padding(vertical = 12.dp, horizontal = 14.dp),
@@ -494,50 +487,45 @@ internal fun DriverNavigationScreen(
                     ) {
                         Icon(
                             if (offRoute) MireliIcons.Refresh else MireliIcons.TurnArrow, null,
-                            tint = if (offRoute) MaterialTheme.colorScheme.onErrorContainer else Color.White,
+                            tint = if (offRoute) colors.onErrorContainer else colors.secondary,
                             modifier = Modifier.size(24.dp)
                         )
                         Column(Modifier.weight(1f)) {
                             Text(
                                 when {
                                     weakGuidance -> "GPS signal is weak"
-                                    phase == NavPhase.OFF_ROUTE -> "Off route · finding a way back"
-                                    phase == NavPhase.ROUTING -> "Working out your route…"
-                                    phase == NavPhase.NO_FIX -> "Waiting for a GPS fix…"
+                                    phase == NavPhase.OFF_ROUTE -> "Rerouting…"
+                                    phase == NavPhase.ROUTING -> "Calculating route…"
+                                    phase == NavPhase.NO_FIX -> "Waiting for GPS"
                                     phase == NavPhase.FAILED -> "Directions unavailable"
                                     else -> maneuver?.let { "${metres(maneuverDistance ?: it.distanceMeters)} · ${it.instruction}" }
                                         ?: "Head to ${destination.name}"
                                 },
-                                style = MaterialTheme.typography.titleSmall,
-                                color = if (offRoute) MaterialTheme.colorScheme.onErrorContainer else Color.White,
+                                style = MaterialTheme.typography.drivingMetric,
                                 maxLines = 2
                             )
-                            Text(
-                                when {
-                                    weakGuidance -> "Follow the highlighted route and road signs."
-                                    guidanceError != null -> guidanceError
-                                    !usableRouteOrigin -> "The destination is pinned. Open Google Maps for directions."
-                                    loading -> "Contacting the routing service"
-                                    else -> destination.name
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = (if (offRoute) MaterialTheme.colorScheme.onErrorContainer else Color.White).copy(alpha = .85f),
-                                maxLines = 2
-                            )
+                            val detail = when {
+                                weakGuidance -> "Follow the highlighted route."
+                                guidanceError != null -> guidanceError
+                                !usableRouteOrigin -> "Destination pinned"
+                                else -> null
+                            }
+                            if (detail != null) Text(detail, style = MaterialTheme.typography.bodySmall,
+                                color = if (offRoute) colors.onErrorContainer else colors.onSurfaceVariant)
                         }
                     }
                 }
             }
             if (atStop) {
-                Surface(shape = RoundedCornerShape(MireliDesign.Radius.card), color = MaterialTheme.colorScheme.primaryContainer, shadowElevation = 4.dp) {
+                Surface(shape = RoundedCornerShape(MireliDesign.Radius.card), color = colors.surfaceContainer) {
                     Text("You have arrived at ${destination?.name}", Modifier.padding(16.dp),
-                        style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        style = MaterialTheme.typography.titleMedium, color = colors.onSurface)
                 }
             }
         }
 
         NavigationSheet(
-            modifier = Modifier.align(Alignment.BottomCenter),
+            modifier = Modifier.align(Alignment.BottomCenter).onSizeChanged { sheetHeight = it.height },
             stop = stop ?: previewStop,
             distance = remainingDistance?.takeUnless { offRoute },
             seconds = remainingTime?.takeUnless { offRoute },
@@ -548,7 +536,6 @@ internal fun DriverNavigationScreen(
             loading = loading,
             expanded = expanded,
             onToggle = { expanded = !expanded },
-            onEnd = onClose,
             canOpenMaps = mapTarget != null,
             onOpenMaps = {
                 val target = mapTarget!!
@@ -564,11 +551,11 @@ internal fun DriverNavigationScreen(
             Surface(
                 Modifier.align(Alignment.Center).padding(28.dp),
                 shape = RoundedCornerShape(MireliDesign.Radius.card),
-                color = MaterialTheme.colorScheme.surface, shadowElevation = 6.dp
+                color = colors.surfaceContainer
             ) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Location is off", style = MaterialTheme.typography.titleMedium)
-                    Text("Mireli needs your device location to draw your car on the map and guide you to the stop. It is used only while this screen is open.",
+                    Text("Allow location to show your position and get directions.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Button(onClick = { permissionAsked = false }) { Text("Allow location") }
                 }
@@ -594,98 +581,65 @@ private fun NavigationSheet(
     loading: Boolean,
     expanded: Boolean,
     onToggle: () -> Unit,
-    onEnd: () -> Unit,
     canOpenMaps: Boolean,
     onOpenMaps: () -> Unit,
     manualFallback: Boolean,
     onRetry: (() -> Unit)?,
 ) {
+    val colors = MaterialTheme.colorScheme
     Surface(
         modifier.fillMaxWidth().animateContentSize(),
         shape = RoundedCornerShape(topStart = MireliDesign.Radius.hero, topEnd = MireliDesign.Radius.hero),
-        color = MaterialTheme.colorScheme.surface, shadowElevation = 14.dp
+        color = colors.surfaceContainer,
     ) {
-        Column(Modifier.navigationBarsPadding().padding(horizontal = 18.dp, vertical = 12.dp)) {
-            Row(
-                Modifier.fillMaxWidth().clickable(onClick = onToggle),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(
-                        stop?.name ?: "Your location",
-                        style = MaterialTheme.typography.titleMedium, maxLines = 1
-                    )
-                    Text(
-                        when {
-                            distance != null && seconds != null -> "${metres(distance)} · ${minutesLabel(seconds)} · arrive ${clock(seconds)} EAT"
-                            loading -> "Working out the route…"
-                            stop == null -> "Live position, updated every few seconds"
-                            !live || accuracy == null || accuracy > GUIDANCE_ACCURACY_METRES -> "Waiting for a more accurate location"
-                            else -> "Distance and time appear once the route loads"
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1
-                    )
+        Column(
+            Modifier.navigationBarsPadding().padding(MireliDesign.Space.md),
+            verticalArrangement = Arrangement.spacedBy(MireliDesign.Space.xs),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(stop?.name ?: "Your location", Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleMedium, maxLines = 2)
+                IconButton(onClick = onToggle, modifier = Modifier.size(MireliDesign.TouchTarget)) {
+                    Icon(if (expanded) MireliIcons.ExpandLess else MireliIcons.ExpandMore,
+                        if (expanded) "Hide GPS details" else "Show GPS details", tint = colors.secondary)
                 }
-                SheetChevron(expanded, onToggle)
             }
-
-            Row(
-                Modifier.fillMaxWidth().padding(top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                LiveChip(
-                    when {
-                        !live -> "GPS lost"
-                        accuracy != null -> "±${accuracy.toInt()} m"
-                        else -> "No fix"
-                    },
-                    live && distance != null
-                )
+            if (distance != null && seconds != null) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(MireliDesign.Space.md)) {
+                    Text(metres(distance), style = MaterialTheme.typography.drivingMetric)
+                    Text(minutesLabel(seconds), style = MaterialTheme.typography.drivingMetric)
+                    Text("ETA ${clock(seconds)}", style = MaterialTheme.typography.drivingMetric)
+                }
+            } else {
+                val status = when {
+                    loading -> "Calculating route…"
+                    !live -> "Waiting for GPS"
+                    stop == null -> "GPS active"
+                    accuracy == null || accuracy > GUIDANCE_ACCURACY_METRES -> "Weak GPS"
+                    else -> "Destination pinned"
+                }
+                DepartureNote(status)
             }
-
             if (canOpenMaps) {
-                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    if (onRetry != null) TextButton(onClick = onRetry) { Text("Retry route") }
-                    TextButton(onClick = onOpenMaps) { Text("Open in Google Maps") }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(MireliDesign.Space.xs)) {
+                    if (onRetry != null) TextButton(onClick = onRetry) {
+                        Text("Retry route", color = colors.secondary)
+                    }
+                    TextButton(onClick = onOpenMaps) { Text("Open in Google Maps", color = colors.secondary) }
                 }
             }
-            if (manualFallback) Text("Google Maps could not open.", color = MaterialTheme.colorScheme.error)
+            if (manualFallback) Text("Google Maps could not open.", color = colors.error)
             AnimatedVisibility(expanded) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 10.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        speedKmh?.let { LiveChip("%.0f km/h".format(it), live) }
-                        ageSeconds?.let { LiveChip("updated ${it.coerceAtLeast(0)}s ago", live) }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(MireliDesign.Space.md)) {
+                    accuracy?.let { Text("GPS ±${it.toInt()} m", style = MaterialTheme.typography.numericDetail) }
+                    speedKmh?.takeIf { live }?.let {
+                        Text("%.0f km/h".format(it), style = MaterialTheme.typography.numericDetail)
                     }
-                    TextButton(onClick = onEnd) { Text("End navigation") }
+                    ageSeconds?.let {
+                        Text("${it.coerceAtLeast(0)}s since fix", style = MaterialTheme.typography.numericDetail)
+                    }
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun SheetChevron(expanded: Boolean, onToggle: () -> Unit) {
-    IconButton(onClick = onToggle, modifier = Modifier.size(36.dp)) {
-        Icon(
-            if (expanded) MireliIcons.ExpandLess else MireliIcons.ExpandMore,
-            if (expanded) "Show less" else "Show more",
-            tint = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
-@Composable
-private fun LiveChip(text: String, live: Boolean) {
-    Surface(
-        shape = RoundedCornerShape(MireliDesign.Radius.chip),
-        color = if (live) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
-    ) {
-        Text(text, Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-            style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium,
-            color = if (live) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

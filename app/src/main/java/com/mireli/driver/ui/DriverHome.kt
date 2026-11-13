@@ -1,8 +1,9 @@
 package com.mireli.driver.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -16,7 +17,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import com.mireli.driver.domain.NavigationStop
 import com.mireli.driver.TrainSchedule
@@ -129,7 +129,6 @@ internal fun MireliPanel(
         modifier
             .clip(RoundedCornerShape(MireliDesign.Radius.card))
             .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(MireliDesign.Radius.card))
             .padding(padding),
         verticalArrangement = Arrangement.spacedBy(MireliDesign.Space.sm),
         content = content
@@ -196,29 +195,19 @@ private fun ApplicationPanel(status: String?, onOpenAccount: () -> Unit, onRefre
         "suspended" -> "Driver account suspended"
         else -> "Check application status"
     }
-    val detail = when (status) {
-        "draft" -> "Save your driver and vehicle details, upload the required documents, then submit for review."
-        "submitted" -> "Mireli is reviewing your documents. Check your application for updates."
-        "changes_requested" -> "Read the reviewer’s feedback, update your documents and submit again."
-        "approved" -> "Open your application to check which documents need attention before you can take transfers."
-        "suspended" -> "Open your account for details or contact Mireli support."
-        else -> "Refresh to load your application and see what to do next."
-    }
-        DriverOverviewSurface {
-            Text(title, style = MaterialTheme.typography.headlineMedium)
-            Text(detail, style = MaterialTheme.typography.bodyMedium)
-            DepartureButton(
-                onClick = if (status == null) onRefresh else onOpenAccount,
-                enabled = true,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(when (status) {
-                    null -> "Refresh account"
-                    "draft" -> "Continue onboarding"
-                    else -> "View application"
-                })
+    DriverOverviewSurface {
+        Text(title, style = MaterialTheme.typography.headlineSmall)
+        when (status) {
+            "draft" -> {
+                DepartureNote("Add driver details and documents.")
+                DepartureButton(onClick = onOpenAccount, modifier = Modifier.fillMaxWidth()) {
+                    Text("Continue onboarding")
+                }
             }
+            null -> TextButton(onClick = onRefresh) { Text("Refresh account", color = MaterialTheme.colorScheme.secondary) }
+            else -> TextButton(onClick = onOpenAccount) { Text("View application", color = MaterialTheme.colorScheme.secondary) }
         }
+    }
 }
 
 @Composable
@@ -245,8 +234,7 @@ private fun NextTransferCard(
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             if (departure != null) {
-                Text(ClockFormat.format(departure), style = MaterialTheme.typography.displaySmall.copy(
-                    fontSize = 49.sp, lineHeight = 54.sp), color = colors.secondary)
+                Text(ClockFormat.format(departure), style = MaterialTheme.typography.transferClock, color = colors.onSurface)
                 Text("EAT", style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
             } else {
                 Text("Departure time pending", style = MaterialTheme.typography.titleMedium)
@@ -257,15 +245,14 @@ private fun NextTransferCard(
                 "at_pickup" -> "At pickup"
                 else -> "In progress"
             }, style = MaterialTheme.typography.labelLarge,
-                color = if (phase == "assigned") colors.secondary else colors.primary)
+                color = if (phase == "in_progress") colors.primary else colors.onSurfaceVariant)
         }
         TransferEndpoints(trip, showLabels = false)
         val seats = trip.partySeats()
         if (seats > 0) Text(if (seats == 1) "1 passenger" else "$seats passengers",
             style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
-        DepartureButton(onClick = { onOpenTrip(tripId) }, modifier = Modifier.fillMaxWidth()) {
-            Text(if (phase == "assigned") "Review & accept" else "Open transfer",
-                style = MaterialTheme.typography.titleMedium)
+        TextButton(onClick = { onOpenTrip(tripId) }) {
+            Text(if (phase == "assigned") "Review & accept" else "Open transfer", color = colors.secondary)
         }
         if (stop != null) {
             TextButton(onClick = { onStartNavigation(tripId, stop) }, modifier = Modifier.align(Alignment.End)) {
@@ -277,81 +264,77 @@ private fun NextTransferCard(
 
 @Composable
 private fun SgrTodayPanel(now: Instant, schedule: TrainSchedule, onRefresh: () -> Unit) {
-    val events = remember(schedule.services, now.epochSecond / 60) {
-        SgrTimetable.upcoming(schedule.services.orEmpty(), now)
-    }
+    val services = schedule.services.orEmpty()
+    val today = now.atZone(SgrTimetable.zone).toLocalDate()
+    val upcoming = remember(services, now.epochSecond / 60) { SgrTimetable.upcoming(services, now) }
+    val next = upcoming.firstOrNull { it.at >= now }
+    var fullTimetable by rememberSaveable { mutableStateOf(false) }
     val colors = MaterialTheme.colorScheme
-    val date = now.atZone(NairobiZone).toLocalDate()
-    val arrivals = events.filter { it.service.movement == SgrTimetable.Movement.Arrival }
-    val departures = events.filter { it.service.movement == SgrTimetable.Movement.Departure }
-    val nextArrival = arrivals.firstOrNull { it.at >= now }
-    val nextDeparture = departures.firstOrNull { it.at >= now }
-    val recentArrival = arrivals.lastOrNull { it.at < now }
-
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(MireliDesign.Space.xs)) {
         Text("Mombasa Terminus", style = MaterialTheme.typography.titleLarge)
-        Text("SGR timetable · East Africa Time", style = MaterialTheme.typography.bodySmall,
-            color = colors.onSurfaceVariant)
+        DepartureNote("Published SGR timetable · EAT")
         if (schedule.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
         if (schedule.failed) {
-            Text(if (schedule.services == null) "Couldn’t load train times." else "Showing the last loaded timetable.",
-                style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+            DepartureNote(if (schedule.services == null) "Train times unavailable." else "Showing last loaded times.")
             TextButton(onClick = onRefresh) { Text("Refresh timetable") }
         }
-        if (schedule.services?.isEmpty() == true) {
-            Text("No scheduled services are listed.", style = MaterialTheme.typography.bodyMedium)
+        if (schedule.services?.isEmpty() == true) DepartureNote("No scheduled services.")
+        if (next != null) {
+            TrainTimeRow(next, next.at.atZone(SgrTimetable.zone).toLocalDate() != today, next = true)
         }
-        if (events.isNotEmpty()) {
-            Column {
-                listOfNotNull(
-                    nextArrival?.let { "Next arrival" to it },
-                    nextDeparture?.let { "Next departure" to it },
-                    recentArrival?.let { "Scheduled arrival" to it },
-                ).forEachIndexed { index, (label, event) ->
-                    if (index > 0) HorizontalDivider(color = colors.outlineVariant)
-                    TrainTimeRow(label, event, date, Modifier.staggerIn(index))
-                }
+        if (services.isNotEmpty()) {
+            TextButton(onClick = { fullTimetable = true }, modifier = Modifier.heightIn(min = MireliDesign.TouchTarget)) {
+                Text("Full timetable", color = colors.secondary)
             }
-            DepartureDisclosure("More train times", "Published timetable") {
-                events.asSequence().filter { it.at >= now }.take(6).forEachIndexed { index, event ->
-                    if (index > 0) HorizontalDivider(color = colors.outlineVariant)
-                    TrainTimeRow(
-                        if (event.service.movement == SgrTimetable.Movement.Arrival) "Arrival from Nairobi" else "Departure to Nairobi",
-                        event, date, Modifier.staggerIn(index)
-                    )
-                }
-            }
-            Text("Scheduled times only. Check with the station for actual arrivals or delays.",
-                style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
         }
+    }
+    if (fullTimetable) {
+        val tomorrow = today.plusDays(1)
+        val times = remember(services, today) {
+            listOf(today, tomorrow).map { date ->
+                date to SgrTimetable.eventsOn(services, date)
+            }
+        }
+        AlertDialog(
+            onDismissRequest = { fullTimetable = false },
+            title = { Text("Mombasa Terminus") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(MireliDesign.Space.xs)) {
+                    DepartureNote("Kenya Railways · Scheduled times · EAT")
+                    times.forEach { (date, events) ->
+                        val heading = if (date == today) "Today" else "Tomorrow"
+                        Text(heading, style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.padding(top = MireliDesign.Space.sm))
+                        if (events.isEmpty()) DepartureNote("No scheduled services.")
+                        events.forEach { TrainTimeRow(it, tomorrow = false) }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { fullTimetable = false }) { Text("Done") } },
+        )
     }
 }
 
 @Composable
-private fun TrainTimeRow(
-    label: String,
-    event: SgrTimetable.Event,
-    today: java.time.LocalDate,
-    modifier: Modifier = Modifier,
-) {
+private fun TrainTimeRow(event: SgrTimetable.Event, tomorrow: Boolean, next: Boolean = false) {
     val colors = MaterialTheme.colorScheme
-    val day = event.at.atZone(NairobiZone).toLocalDate()
-    val dayLabel = when (day) {
-        today -> null
-        today.plusDays(1) -> "Tomorrow"
-        else -> DayFormat.format(event.at)
-    }
-    Row(modifier.fillMaxWidth().padding(vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(MireliIcons.TrainFront, null, Modifier.size(22.dp),
-            tint = if (event.service.movement == SgrTimetable.Movement.Arrival) colors.primary else colors.secondary)
+    val movement = if (event.service.movement == SgrTimetable.Movement.Arrival) "From Nairobi" else "To Nairobi"
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = MireliDesign.Space.xs),
+        horizontalArrangement = Arrangement.spacedBy(MireliDesign.Space.md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(ClockFormat.format(event.at), style = MaterialTheme.typography.timetableClock)
         Column(Modifier.weight(1f)) {
+            val label = when {
+                !next -> movement
+                event.service.movement == SgrTimetable.Movement.Arrival -> "Next arrival from Nairobi"
+                else -> "Next departure to Nairobi"
+            }
             Text(label, style = MaterialTheme.typography.titleSmall)
-            Text(listOfNotNull(event.service.name, dayLabel).joinToString(" · "),
+            Text(if (tomorrow) "${event.service.name} · ${DayFormat.format(event.at)}" else event.service.name,
                 style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
         }
-        Text(ClockFormat.format(event.at), style = MaterialTheme.typography.titleMedium
-            .copy(fontFeatureSettings = MireliDesign.NumberFeatures), color = colors.secondary)
     }
 }
 
@@ -384,16 +367,16 @@ private fun PickupQueue(
     MireliPanel(Modifier.fillMaxWidth(), padding = 0.dp) {
         rows.take(4).forEachIndexed { index, (trip, party) ->
             if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            PickupRow(trip, party, index, onOpenTrip)
+            PickupRow(trip, party, onOpenTrip)
         }
     }
 }
 
 @Composable
-private fun PickupRow(trip: JSONObject, party: JSONObject, index: Int, onOpenTrip: (String) -> Unit) {
+private fun PickupRow(trip: JSONObject, party: JSONObject, onOpenTrip: (String) -> Unit) {
+    val pending = trip.optString("phase") != "in_progress"
     val seats = party.optInt("seats", 1)
     val clock = trip.departureClock()
-    val pending = trip.optString("phase") != "in_progress"
     Row(
         Modifier.fillMaxWidth().clickable { onOpenTrip(trip.optString("id")) }
             .padding(horizontal = MireliDesign.PanelPadding, vertical = MireliDesign.Space.sm),
@@ -430,12 +413,6 @@ private fun PickupRow(trip: JSONObject, party: JSONObject, index: Int, onOpenTri
                 maxLines = 1, overflow = TextOverflow.Ellipsis
             )
         }
-        if (pending) {
-            MireliStatusChip(
-                if (index == 0) "Next" else if (index == 1) "After" else "Later",
-                if (index == 0) ChipTone.Positive else ChipTone.Neutral
-            )
-        }
         Icon(MireliIcons.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(18.dp))
     }
@@ -449,15 +426,12 @@ internal fun DriverHomeDashboard(
     applicationStatus: String?,
     tripsCurrent: Boolean,
     trips: List<JSONObject>?,
-    activeNavigation: (@Composable () -> Unit)?,
     onRefresh: () -> Unit,
     onOpenTrips: () -> Unit,
     onOpenAccount: () -> Unit,
     onOpenTrip: (String) -> Unit,
     onStartNavigation: (String, NavigationStop) -> Unit,
     onOpenMap: () -> Unit,
-    onOpenEarnings: () -> Unit,
-    paidAmount: String? = null,
     renewalNote: String? = null,
     schedule: TrainSchedule = TrainSchedule(),
     onRefreshTimetable: () -> Unit = {}
@@ -468,15 +442,11 @@ internal fun DriverHomeDashboard(
             DepartureNote(renewalNote)
             TextButton(onClick = onOpenAccount) { Text("Renew documents") }
         }
-        val now = rememberNow()
+        val now = rememberNow(15_000L)
         if (!eligible) {
             if (renewalNote == null) ApplicationPanel(applicationStatus, onOpenAccount, onRefresh)
             SgrTodayPanel(now, schedule, onRefreshTimetable)
-            DriverOverviewLink("Live map", "Find a destination or check your location", MireliIcons.Map, onOpenMap)
-            HorizontalDivider()
-            DriverOverviewLink("Trip activity", "Assignments and journey history", MireliIcons.CarFront, onOpenTrips)
-            HorizontalDivider()
-            DriverOverviewLink("Earnings", paidAmount ?: "View settlements and payout details", MireliIcons.AccountBalanceWallet, onOpenEarnings)
+            TextButton(onClick = onOpenMap) { Text("Live map", color = MaterialTheme.colorScheme.secondary) }
             return@Column
         }
 
@@ -505,7 +475,6 @@ internal fun DriverHomeDashboard(
                     }
                 }
             }
-            activeNavigation?.invoke()
             if (currentTrips.any { it.isActiveTransfer() && it.parties().isNotEmpty() }) {
                 PickupQueue(
                     trips = currentTrips,
@@ -515,17 +484,9 @@ internal fun DriverHomeDashboard(
                 )
             }
         } else if (tripsCurrent) {
-                DriverOverviewSurface {
-                    Text("No transfers assigned", style = MaterialTheme.typography.headlineSmall)
-                    Text("Your next scheduled transfer will appear here when Mireli assigns it.",
-                        style = MaterialTheme.typography.bodyMedium)
-                    TextButton(onClick = onOpenTrips) { Text("View trips") }
-                }
+            Text("No assignments", style = MaterialTheme.typography.headlineSmall)
         }
         SgrTodayPanel(now, schedule, onRefreshTimetable)
-        DriverOverviewLink("Live map", "Find a destination or check your location", MireliIcons.Map, onOpenMap)
-        HorizontalDivider()
-        DriverOverviewLink("Earnings", paidAmount ?: "View settlements and payout details", MireliIcons.AccountBalanceWallet, onOpenEarnings)
     }
 }
 
@@ -629,7 +590,6 @@ private fun StationHeadCard(station: String, departures: Int) {
         Modifier.fillMaxWidth()
             .clip(RoundedCornerShape(MireliDesign.Radius.card))
             .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(MireliDesign.Radius.card))
             .padding(MireliDesign.Space.md),
         horizontalArrangement = Arrangement.spacedBy(MireliDesign.Space.sm),
         verticalAlignment = Alignment.CenterVertically
@@ -665,7 +625,7 @@ private fun NextTrainCard(next: Departure, now: Instant, onOpenTrip: (String) ->
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(
                 ClockFormat.format(departure),
-                style = MaterialTheme.typography.headlineLarge.copy(fontFeatureSettings = MireliDesign.NumberFeatures),
+                style = MaterialTheme.typography.drivingMetric,
                 color = if (urgent) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurface
             )
             Text("EAT", style = MaterialTheme.typography.labelMedium,
