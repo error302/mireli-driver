@@ -126,11 +126,21 @@ class OnboardingStore(private val context: Context) {
         internal fun readUpload(context: Context, uri: Uri, serverLimit: Int): Pair<String, ByteArray> {
             val maxBytes = serverLimit.coerceAtMost(MAX_BYTES)
             require(maxBytes > 0) { "Document uploads are currently unavailable." }
-            val (mime, input) = openDocument(context, uri)
-            return readDocument(mime, input, maxBytes)
+            val input = context.contentResolver.openInputStream(uri)
+                ?: throw IllegalArgumentException("The selected document could not be opened.")
+            return readOriginal(input, maxBytes)
         }
 
-        internal fun readDocument(declaredMime: String, input: InputStream, maxBytes: Int): Pair<String, ByteArray> = input.use {
+        internal fun readOriginal(input: InputStream, maxBytes: Int): Pair<String, ByteArray> {
+            val bytes = readBounded(input, maxBytes)
+            val mime = sniffMime(bytes) ?: throw IllegalArgumentException("Choose an original PDF, JPG or PNG file.")
+            return mime to bytes
+        }
+
+        internal fun readDocument(declaredMime: String, input: InputStream, maxBytes: Int): Pair<String, ByteArray> =
+            resolveUpload(declaredMime, readBounded(input, maxBytes), maxBytes)
+
+        private fun readBounded(input: InputStream, maxBytes: Int): ByteArray = input.use {
             val output = ByteArrayOutputStream()
             val buffer = ByteArray(8192)
             while (true) {
@@ -139,7 +149,7 @@ class OnboardingStore(private val context: Context) {
                 require(read <= maxBytes - output.size()) { "Choose a smaller document. The file exceeds the upload limit." }
                 output.write(buffer, 0, read)
             }
-            resolveUpload(declaredMime, output.toByteArray(), maxBytes)
+            output.toByteArray()
         }
 
         /**

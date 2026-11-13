@@ -121,7 +121,7 @@ fun DriverSignInScreen(
                             }),
                             singleLine = true,
                             enabled = signInOpen && !state.loading,
-                            colors = signInFieldColors(),
+                            colors = departureFieldColors(),
                             modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp).focusRequester(emailFocus)
                                 .testTag("driver_email_field")
                         )
@@ -157,7 +157,7 @@ fun DriverSignInScreen(
                             keyboardActions = KeyboardActions(onDone = { if (canVerify) { focus.clearFocus(); keyboard?.hide(); onVerifyCode() } }),
                             singleLine = true,
                             enabled = !state.loading,
-                            colors = signInFieldColors(),
+                            colors = departureFieldColors(),
                             modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp)
                         )
                     }
@@ -210,14 +210,6 @@ fun DriverSignInScreen(
     }
     }
 }
-
-@Composable
-private fun signInFieldColors() = TextFieldDefaults.colors(
-    focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
-    disabledContainerColor = Color.Transparent,
-    focusedIndicatorColor = MaterialTheme.colorScheme.secondary,
-    unfocusedIndicatorColor = MaterialTheme.colorScheme.outline
-)
 
 @Composable
 internal fun DepartureButton(

@@ -13,8 +13,11 @@ import org.json.JSONObject
 
 private const val DEFAULT_SUPPORT_EMAIL = "mirelisgr001@gmail.com"
 
+data class DocumentUpload(val type: String, val uploading: Boolean = false, val uploaded: Boolean = false, val message: String? = null)
+
 data class DriverServiceState(val loading:Boolean=true,val signedIn:Boolean=false,val challengeId:String?=null,
-    val demoCode:String?=null,val challengeEmail:String?=null,val onboarding:JSONObject?=null,val earnings:JSONObject?=null,val support:JSONObject?=null,val supportSent:Int=0,val eligibility:JSONObject?=null,val trips:JSONObject?=null,val tripDataCurrent:Boolean=false,val pendingTripAction:Boolean=false,val emailSignInOpen:Boolean?=null,val registrationOpen:Boolean?=null,val navigationOpen:Boolean=false,val serviceMessage:String?=null,val supportEmail:String=DEFAULT_SUPPORT_EMAIL,val resendAt:Long=0,val error:String?=null)
+    val demoCode:String?=null,val challengeEmail:String?=null,val onboarding:JSONObject?=null,val earnings:JSONObject?=null,val support:JSONObject?=null,val supportSent:Int=0,val eligibility:JSONObject?=null,val trips:JSONObject?=null,val tripDataCurrent:Boolean=false,val pendingTripAction:Boolean=false,val emailSignInOpen:Boolean?=null,val registrationOpen:Boolean?=null,val navigationOpen:Boolean=false,val serviceMessage:String?=null,val supportEmail:String=DEFAULT_SUPPORT_EMAIL,val resendAt:Long=0,val error:String?=null,
+    val documentUpload: DocumentUpload? = null)
 class DriverServicesViewModel(application:Application):AndroidViewModel(application) {
     private val api=DriverApi()
     private val sessions=DriverSessionStore(application)
@@ -226,17 +229,50 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
     fun upload(type:String,expiry:String,uri:Uri)=work {
         val current=mutable.value.onboarding?:return@work
         val limit = current.getInt("maxDocumentBytes")
-        val (mime, bytes) = try {
-            withContext(Dispatchers.IO) { OnboardingStore.readUpload(getApplication(), uri, limit) }
-        } catch (error: IllegalArgumentException) {
-            throw DriverServiceException(400, error.message ?: "Choose a valid document.")
-        } catch (_: java.io.IOException) {
-            throw DriverServiceException(400, "The selected document could not be read. Choose it again.")
-        } catch (_: SecurityException) {
-            throw DriverServiceException(400, "Access to this document expired. Choose it again.")
+        mutable.value = mutable.value.copy(documentUpload = DocumentUpload(type, uploading = true))
+        fun fail(message: String) {
+            mutable.value = mutable.value.copy(documentUpload = DocumentUpload(type, message = message))
         }
-        val updated=api.request("/documents/$type","POST",session?.token,bytes=bytes,headers=mapOf("Content-Type" to mime,"x-application-version" to current.getJSONObject("application").getInt("version").toString(),"x-document-expiry" to expiry))
-        mutable.value=mutable.value.copy(onboarding=updated);loadAccount()
+        val updated = try {
+            val (mime, bytes) = withContext(Dispatchers.IO) { OnboardingStore.readUpload(getApplication(), uri, limit) }
+            api.request("/documents/$type", "POST", session?.token, bytes = bytes, headers = mapOf(
+                "Content-Type" to mime,
+                "x-application-version" to current.getJSONObject("application").getInt("version").toString(),
+                "x-document-expiry" to expiry
+            ))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: DriverServiceException) {
+            if (error.sessionRejected) throw error
+            fail(when {
+                error.status == 413 -> "This file is too large. Choose a smaller PDF, JPG or PNG."
+                error.code == "STALE_APPLICATION" -> "Refresh your account before uploading this document again."
+                error.code in setOf("INVALID_DOCUMENT", "EXPIRED_DOCUMENT", "STORAGE_NOT_CONFIGURED", "STORAGE_NOT_PRIVATE") ->
+                    error.message ?: "Mireli could not save this document."
+                else -> "Mireli could not confirm this upload. Refresh your account before retrying."
+            })
+            return@work
+        } catch (error: IllegalArgumentException) {
+            fail(error.message ?: "Choose a valid PDF, JPG or PNG.")
+            return@work
+        } catch (_: SecurityException) {
+            fail("Access to this file expired. Choose it again.")
+            return@work
+        } catch (_: java.io.IOException) {
+            fail("The upload could not be confirmed. Check your connection and refresh your account before retrying.")
+            return@work
+        }
+        mutable.value = mutable.value.copy(onboarding = updated, eligibility = null, tripDataCurrent = false,
+            documentUpload = DocumentUpload(type, uploaded = true, message = "Document received."))
+        try {
+            loadAccount()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            if (error is DriverServiceException && error.sessionRejected) throw error
+            mutable.value = mutable.value.copy(documentUpload = DocumentUpload(type, uploaded = true,
+                message = "Document received. Refresh your account to update your application status."))
+        }
     }
     fun submit(accepted:Boolean)=work {
         val current=mutable.value.onboarding?:return@work

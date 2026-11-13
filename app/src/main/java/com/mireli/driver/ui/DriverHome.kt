@@ -174,11 +174,11 @@ internal fun DriverHomeTopBar(onSupport: () -> Unit) {
 }
 
 @Composable
-private fun DriverIdentity(name: String?, verified: Boolean) {
+internal fun DriverIdentity(name: String?, verified: Boolean, prominent: Boolean = false) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        DriverAvatar(name, size = 32.dp)
+        DriverAvatar(name, size = if (prominent) 48.dp else 32.dp)
         Text(name ?: "Driver", modifier = Modifier.weight(1f, fill = false),
-            style = MaterialTheme.typography.titleMedium)
+            style = if (prominent) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleMedium)
         if (verified) VerifiedBadge(verified = true, compact = true)
     }
 }

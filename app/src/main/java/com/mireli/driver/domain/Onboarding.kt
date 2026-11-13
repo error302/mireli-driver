@@ -1,6 +1,7 @@
 package com.mireli.driver.domain
 
 import java.time.LocalDate
+import java.time.ZoneId
 
 /** Product checklist, subject to operator review; not an assertion of statutory validity periods. */
 data class DocumentRequirement(val id: String, val title: String, val guidance: String,
@@ -21,6 +22,11 @@ object OnboardingPolicy {
         DocumentRequirement("medical", "Medical fitness certificate", "Optional here. Supply only if requested by compliance; applicability is unverified.", true, false),
     )
     fun applicable(ownsVehicle: Boolean) = documents.filter { !it.leasedOnly || !ownsVehicle }
+    fun isCurrentDocumentDate(value: String, today: LocalDate = LocalDate.now(ZoneId.of("Africa/Nairobi"))): Boolean {
+        if (value.length != 10) return false
+        val date = runCatching { LocalDate.parse(value) }.getOrNull() ?: return false
+        return !date.isBefore(today)
+    }
     fun normalizePhone(value: String): String? {
         val clean = value.filterNot { it.isWhitespace() || it == '-' }
         val digits = when {

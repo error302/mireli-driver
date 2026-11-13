@@ -109,7 +109,8 @@ class StagingServicesTest {
         rule.onNodeWithText("Verify and continue").performScrollTo().assertIsEnabled().performClick()
         rule.waitUntil(30000){rule.onAllNodesWithText("Continue onboarding").fetchSemanticsNodes().isNotEmpty()}
         rule.onNodeWithText("Continue onboarding").performClick()
-        rule.waitUntil(30000){rule.onAllNodes(hasText("Sign out") and isEnabled()).fetchSemanticsNodes().isNotEmpty()}
+        awaitAction("Driver & vehicle")
+        rule.onNodeWithText("Driver & vehicle").performClick()
         awaitAction("Kenyan contact phone")
         reveal("Van")
         rule.onNodeWithText("Van").performClick().assertIsSelected()

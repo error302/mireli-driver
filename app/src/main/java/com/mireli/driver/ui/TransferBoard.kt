@@ -122,7 +122,7 @@ internal fun TransferStatus(phase: String) {
 }
 
 @Composable
-internal fun TransferSchedule(trip: JSONObject) {
+internal fun TransferSchedule(trip: JSONObject, useDepartureColor: Boolean = false) {
     val colors = MaterialTheme.colorScheme
     val departure = trip.departureInstant()
     val service = when (trip.optString("serviceType").lowercase(Locale.ROOT)) {
@@ -132,7 +132,8 @@ internal fun TransferSchedule(trip: JSONObject) {
     }
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(if (departure == null) "Departure time pending" else "${DepartureTime.format(departure)} EAT",
-            style = MaterialTheme.typography.headlineMedium.copy(fontFeatureSettings = MireliDesign.NumberFeatures), color = colors.onSurface)
+            style = MaterialTheme.typography.headlineMedium.copy(fontFeatureSettings = MireliDesign.NumberFeatures),
+            color = if (useDepartureColor) colors.secondary else colors.onSurface)
         Text(if (departure == null) service else "${DepartureDay.format(departure)} • $service",
             style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
     }
