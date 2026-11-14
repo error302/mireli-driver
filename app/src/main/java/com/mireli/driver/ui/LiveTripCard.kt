@@ -9,6 +9,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.mireli.driver.domain.DriverDestination
+import com.mireli.driver.domain.DriverRoute
+import com.mireli.driver.domain.GeoPoint
 import com.mireli.driver.domain.NavigationStop
 import org.json.JSONObject
 
@@ -16,6 +19,8 @@ import org.json.JSONObject
     routeRequest:RouteRequest?=null, modifier:Modifier=Modifier, openInitially:Boolean=false,
     onStartNavigation: ((NavigationStop) -> Unit)? = null,
     onSearchAddress: ((String) -> Unit)? = null,
+    onPickupSearch: (suspend (String, GeoPoint?) -> List<DriverDestination>)? = null,
+    onPickupRoute: (suspend (GeoPoint, GeoPoint, Boolean) -> DriverRoute)? = null,
     showNavigation: Boolean = true, primaryActionAnchored: Boolean = false) {
     val id=trip.getString("id");val phase=trip.getString("phase");val context=LocalContext.current
     var expanded by rememberSaveable(id){mutableStateOf(false)}
@@ -70,7 +75,7 @@ import org.json.JSONObject
                             TextButton(onClick={bookingId=p.getString("id");action="no_show"},enabled=canAct){Text("Report remaining seats as no-show")}
                         }
                     }
-                    if(showNavigation && phase in listOf("accepted","at_pickup","in_progress")) TripNavigation(trip, onRequestRoute = routeRequest, onStartNavigation = onStartNavigation)
+                    if(showNavigation && phase in listOf("accepted","at_pickup","in_progress")) TripNavigation(trip, onRequestRoute = routeRequest, onStartNavigation = onStartNavigation, onPickupSearch = onPickupSearch, onPickupRoute = onPickupRoute)
                     DepartureNote("Trip reference · $id")
                 }
             }

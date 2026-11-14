@@ -1,5 +1,7 @@
 package com.mireli.driver.ui
 
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
@@ -14,10 +16,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.mireli.driver.DriverPhoto
 import com.mireli.driver.domain.NavigationStop
 import com.mireli.driver.TrainSchedule
 import com.mireli.driver.domain.SgrTimetable
@@ -148,16 +153,23 @@ private fun SectionHeader(title: String, action: String? = null, onAction: (() -
 }
 
 @Composable
-private fun DriverAvatar(name: String?, size: Dp = 44.dp) {
-    val initials = name?.trim()?.takeIf { it.isNotEmpty() }
-        ?.split(' ')?.take(2)?.mapNotNull { it.firstOrNull()?.uppercaseChar() }?.joinToString("")
-        ?: "MD"
+private fun DriverAvatar(name: String?, photo: DriverPhoto? = null, size: Dp = 44.dp) {
+    val image = remember(photo?.jpeg) {
+        photo?.jpeg?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() }
+    }
     Box(
         Modifier.size(size).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
         contentAlignment = Alignment.Center
     ) {
-        Text(initials, style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onPrimaryContainer)
+        if (image != null) {
+            Image(image, "Your profile photo", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        } else {
+            val initials = name?.trim()?.takeIf { it.isNotEmpty() }
+                ?.split(' ')?.take(2)?.mapNotNull { it.firstOrNull()?.uppercaseChar() }?.joinToString("")
+                ?: "MD"
+            Text(initials, style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer)
+        }
     }
 }
 
@@ -171,14 +183,14 @@ internal fun DriverHomeTopBar(onSupport: () -> Unit) {
 }
 
 @Composable
-internal fun DriverIdentity(name: String?, verified: Boolean, hour: Int) {
+internal fun DriverIdentity(name: String?, verified: Boolean, hour: Int, photo: DriverPhoto? = null) {
     val greeting = when (hour) {
         in 5..11 -> "Good morning"
         in 12..16 -> "Good afternoon"
         else -> "Good evening"
     }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        DriverAvatar(name, size = 40.dp)
+        DriverAvatar(name, photo, size = 40.dp)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(greeting, style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -448,12 +460,13 @@ internal fun DriverHomeDashboard(
     showLocationPreview: Boolean = true,
     renewalNote: String? = null,
     schedule: TrainSchedule = TrainSchedule(),
-    onRefreshTimetable: () -> Unit = {}
+    onRefreshTimetable: () -> Unit = {},
+    photo: DriverPhoto? = null
 ) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(MireliDesign.Space.md)) {
         val now = rememberNow(15_000L)
-        DriverIdentity(name, verified, hour = now.atZone(NairobiZone).hour)
-        if (showLocationPreview) HomeLocationPreview(onOpenMap)
+        DriverIdentity(name, verified, hour = now.atZone(NairobiZone).hour, photo = photo)
+        if (showLocationPreview) HomeLocationPreview(onOpenMap, compact = !eligible || trips.orEmpty().isEmpty())
         if (renewalNote != null) {
             DepartureNote(renewalNote)
             TextButton(onClick = onOpenAccount) { Text("Renew documents") }

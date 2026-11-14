@@ -84,7 +84,7 @@ private fun policyLink(raw: String): String? = runCatching {
         }
     }
     LaunchedEffect(state.signedIn, section) {
-        if (state.signedIn && section == 0) vm.loadProfilePhoto()
+        if (state.signedIn && (section == 0 || section == 4)) vm.loadProfilePhoto()
     }
     var clock by remember {mutableLongStateOf(System.currentTimeMillis())}
     LaunchedEffect(state.challengeId,state.resendAt){code="";while(state.challengeId!=null&&clock<state.resendAt){clock=System.currentTimeMillis();delay(1000)};clock=System.currentTimeMillis()}
@@ -321,7 +321,7 @@ private fun policyLink(raw: String): String? = runCatching {
             }
         },
     ) { padding ->
-        LazyColumn(Modifier.fillMaxSize().padding(padding).imePadding().testTag("driver_service_list"),state=listState,contentPadding=PaddingValues(horizontal=MireliDesign.Space.md,vertical=MireliDesign.Space.md),verticalArrangement=Arrangement.spacedBy(if (guidedApplication) MireliDesign.Space.md else MireliDesign.Space.sm)) {
+        LazyColumn(Modifier.fillMaxSize().padding(padding).imePadding().testTag("driver_service_list"),state=listState,contentPadding=PaddingValues(start=MireliDesign.Space.md,end=MireliDesign.Space.md,top=MireliDesign.Space.md,bottom=MireliDesign.Space.md + 24.dp),verticalArrangement=Arrangement.spacedBy(if (guidedApplication) MireliDesign.Space.md else MireliDesign.Space.sm)) {
             if(section==4)item { DriverHomeTopBar(onSupport = { section = 2 }) }
             if (guidedApplication) item {
                 DeparturePageTitle("Driver application",
@@ -392,7 +392,8 @@ private fun policyLink(raw: String): String? = runCatching {
                             showLocationPreview = navTarget == null,
                             renewalNote = renewalNote(state.eligibility),
                             schedule = schedule,
-                            onRefreshTimetable = vm::refreshTimetable
+                            onRefreshTimetable = vm::refreshTimetable,
+                            photo = profilePhoto
                         )
                     }
                 }else if(section==0&&onboarding!=null&&app!=null) {
@@ -614,6 +615,8 @@ private fun policyLink(raw: String): String? = runCatching {
                                 routeRequest = routeRequest,
                                 showMap = navTarget == null,
                                 onStartNavigation = { stop -> navTarget = NavTarget(trip.optString("id"), stop) },
+                                onPickupSearch = if (state.destinationSearchOpen) vm::searchDestinations else null,
+                                onPickupRoute = if (state.destinationSearchOpen) vm::destinationRoute else null,
                             )
                         }
                     }
@@ -629,6 +632,8 @@ private fun policyLink(raw: String): String? = runCatching {
                             Modifier.staggerIn(index.coerceAtMost(5)), openInitially = trip.optString("id") == highlightedTripId ||
                                 (!tripHistory && index == 0),
                             onStartNavigation = { stop -> navTarget = NavTarget(trip.optString("id"), stop) },
+                            onPickupSearch = if (state.destinationSearchOpen) vm::searchDestinations else null,
+                            onPickupRoute = if (state.destinationSearchOpen) vm::destinationRoute else null,
                             onSearchAddress = if (state.destinationSearchOpen) { address ->
                                 navTarget = NavTarget(null, null, address)
                             } else null,
@@ -740,12 +745,16 @@ private fun policyLink(raw: String): String? = runCatching {
         )
     }
     navTarget?.let{ target->
+        // A passenger pickup pin is not a trip stage: it opens as a map destination
+        // (point-to-point routing), not as a stage target on the trip routing service.
+        val pickupTarget = target.stop?.takeIf { it.id.startsWith("pickup-") }
         DriverNavigationScreen(
-            tripId=target.tripId, stop=target.stop, onRequestRoute=routeRequest, onClose={navTarget=null},
+            tripId=target.tripId, stop=target.stop?.takeUnless { pickupTarget != null }, onRequestRoute=routeRequest, onClose={navTarget=null},
             onSearch = if (state.destinationSearchOpen) vm::searchDestinations else null,
             onDestinationRoute = if (state.destinationSearchOpen) vm::destinationRoute else null,
             satelliteToken = if (state.satelliteOpen) vm.satelliteSessionToken() else null,
-            initialQuery = target.query
+            initialQuery = target.query,
+            initialDestination = pickupTarget
         )
     }
     }

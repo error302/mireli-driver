@@ -199,6 +199,8 @@ internal fun DriverNavigationScreen(
     onDestinationRoute: (suspend (GeoPoint, GeoPoint, Boolean) -> DriverRoute)? = null,
     satelliteToken: String? = null,
     initialQuery: String? = null,
+    /** Opens with this point already pinned as the destination (passenger pickup). */
+    initialDestination: NavigationStop? = null,
 ) {
     val context = LocalContext.current
     BackHandler(onBack = onClose)
@@ -207,6 +209,11 @@ internal fun DriverNavigationScreen(
     var routeState by remember { mutableStateOf<DriverRoute?>(null) }
     var routeError by remember { mutableStateOf<String?>(null) }
     var ferryFreeRouteUnavailable by remember { mutableStateOf(false) }
+    var usedFerryFallback by remember { mutableStateOf(false) }
+    // Set only by the driver's explicit "Use the ferry route" tap after a ferry-free
+    // attempt failed. Never set programmatically: a preference the app overrides
+    // silently is worse than no preference.
+    var ferryRouteAllowed by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var lastRequest by remember { mutableLongStateOf(0L) }
     var routeAttempt by remember { mutableIntStateOf(0) }
@@ -215,13 +222,14 @@ internal fun DriverNavigationScreen(
     var manualFallback by remember { mutableStateOf(false) }
     var expanded by rememberSaveable { mutableStateOf(false) }
     var offRouteSamples by remember { mutableIntStateOf(0) }
+    var weakGuidanceSamples by remember { mutableIntStateOf(0) }
     val focus = LocalFocusManager.current
     val uriHandler = LocalUriHandler.current
     var searchQuery by rememberSaveable(initialQuery) { mutableStateOf(initialQuery.orEmpty()) }
     var searchResults by remember { mutableStateOf<List<DriverDestination>?>(null) }
     var searching by remember { mutableStateOf(false) }
     var searchError by remember { mutableStateOf<String?>(null) }
-    var previewStop by remember { mutableStateOf<NavigationStop?>(null) }
+    var previewStop by remember(initialDestination?.id) { mutableStateOf<NavigationStop?>(initialDestination) }
     var guidanceStarted by rememberSaveable(previewStop?.id) { mutableStateOf(false) }
     val destination = stop ?: previewStop
     var searchJob by remember { mutableStateOf<Job?>(null) }
@@ -252,6 +260,13 @@ internal fun DriverNavigationScreen(
         offRouteSamples = if (route != null && confidentlyOffRoute) offRouteSamples + 1 else 0
     }
     val offRoute = confidentlyOffRoute && offRouteSamples >= 2
+    // Same hysteresis for the weak-GPS banner: stationary phones alternate between
+    // satellite (~15 m) and network (~100 m) fixes, and flipping the banner on every
+    // borderline fix reads as text spam. Warn only on a sustained run of bad fixes;
+    // one good fix clears it again.
+    LaunchedEffect(route, position.fix, usableGuidanceFix) {
+        weakGuidanceSamples = if (route != null && !usableGuidanceFix) weakGuidanceSamples + 1 else 0
+    }
 
     LaunchedEffect(tripId, destination, current, usableRouteOrigin, offRoute, routeAttempt, simulated) {
         val point = current ?: return@LaunchedEffect
@@ -266,10 +281,10 @@ internal fun DriverNavigationScreen(
             loading = true
             routeError = null
             lastRequest = now
-            request(tripId.orEmpty(), target.id, point, avoidFerries) { result ->
+            request(tripId.orEmpty(), target.id, point, avoidFerries && !ferryRouteAllowed) { result ->
                 if (routeAttempt != attempt) return@request
                 result.mapCatching(DriverRoute::fromJson)
-                    .onSuccess { routeState = it; offRouteSamples = 0 }
+                    .onSuccess { routeState = it; offRouteSamples = 0; if (ferryRouteAllowed && avoidFerries) usedFerryFallback = true }
                     .onFailure { error ->
                         ferryFreeRouteUnavailable = (error as? DriverServiceException)?.code == "NO_FERRY_FREE_ROUTE"
                         routeError = error.message?.take(160) ?: "Directions are unavailable."
@@ -282,14 +297,18 @@ internal fun DriverNavigationScreen(
             lastRequest = now
             scope.launch {
                 try {
-                    val result = onDestinationRoute(point, GeoPoint(target.latitude, target.longitude), avoidFerries)
-                    if (previewStop === target && routeAttempt == attempt) { routeState = result; offRouteSamples = 0 }
+                    val result = onDestinationRoute(point, GeoPoint(target.latitude, target.longitude), avoidFerries && !ferryRouteAllowed)
+                    if (previewStop === target && routeAttempt == attempt) { routeState = result; offRouteSamples = 0; if (ferryRouteAllowed && avoidFerries) usedFerryFallback = true }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
                     if (previewStop === target && routeAttempt == attempt) {
-                        ferryFreeRouteUnavailable = (error as? DriverServiceException)?.code == "NO_FERRY_FREE_ROUTE"
+                        val noFerryFree = (error as? DriverServiceException)?.code == "NO_FERRY_FREE_ROUTE"
+                        ferryFreeRouteUnavailable = noFerryFree
                         routeError = error.message?.take(160) ?: "Directions are unavailable."
+                        // No silent ferry fallback: with "Avoid ferries" on, the sheet
+                        // offers "Use the ferry route" and only that explicit tap sets
+                        // ferryRouteAllowed. Otherwise the toggle would be decoration.
                     }
                 } finally {
                     if (previewStop === target && routeAttempt == attempt) loading = false
@@ -307,28 +326,31 @@ internal fun DriverNavigationScreen(
     val remainingDistance = route?.let { r -> nearest?.let { remainingDistanceMeters(r, it) } }
     val mapTarget = stop ?: previewStop
 
-    fun searchDestination(query: String) {
-        focus.clearFocus()
+    fun searchDestination(query: String, live: Boolean = false) {
+        if (!live) focus.clearFocus()
         val search = onSearch
         if (search == null) {
-            if (DriverNavigation.addressSearch(query)?.let { openMaps(context, it) } != true) {
+            if (!live && DriverNavigation.addressSearch(query)?.let { openMaps(context, it) } != true) {
                 searchError = "Google Maps could not open."
             }
             return
         }
         searchJob?.cancel()
         searchJob = scope.launch {
+            // Debounce live searches so each keystroke does not fire a request; a newer
+            // keystroke cancels this job during the delay.
+            if (live) delay(400)
             searching = true
             searchError = null
             searchResults = null
             try {
                 val results = search(query, current?.takeIf { position.live })
                 searchResults = results.takeIf { it.isNotEmpty() }
-                if (results.isEmpty()) searchError = "No match in Mireli. Try a nearby landmark or search in Google Maps."
+                if (results.isEmpty() && !live) searchError = "No match for that search. Touch and hold the map to drop a pin, or search in Google Maps."
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                searchError = "Mireli search is unavailable. Try again or search in Google Maps."
+                if (!live) searchError = "Mireli search is unavailable. Try again or search in Google Maps."
             } finally {
                 searching = false
             }
@@ -341,6 +363,8 @@ internal fun DriverNavigationScreen(
         routeState = null
         routeError = null
         ferryFreeRouteUnavailable = false
+        usedFerryFallback = false
+        ferryRouteAllowed = false
         searchResults = null
         searchError = null
         loading = false
@@ -365,7 +389,7 @@ internal fun DriverNavigationScreen(
         atStop = atStop, hasFix = usableRouteOrigin || route != null, offRoute = offRoute,
         loading = loading, routeError = guidanceError, hasRoute = route != null
     )
-    val weakGuidance = !usableGuidanceFix && route != null
+    val weakGuidance = !usableGuidanceFix && route != null && weakGuidanceSamples >= 3
 
     val colors = MaterialTheme.colorScheme
     var sheetHeight by remember { mutableIntStateOf(0) }
@@ -418,7 +442,12 @@ internal fun DriverNavigationScreen(
                             Icon(MireliIcons.LocationOn, null, Modifier.size(18.dp), tint = colors.secondary)
                             androidx.compose.material3.TextField(
                                 value = searchQuery,
-                                onValueChange = { searchQuery = it.take(120); searchJob?.cancel(); searchResults = null; searchError = null },
+                                onValueChange = { value ->
+                                    searchQuery = value.take(120); searchJob?.cancel(); searchResults = null; searchError = null; routeError = null; ferryFreeRouteUnavailable = false; usedFerryFallback = false
+                                    // Search as you type, so a destination is findable without
+                                    // hunting for the keyboard's search button first.
+                                    if (onSearch != null && searchQuery.trim().length >= 3) searchDestination(searchQuery, live = true)
+                                },
                                 modifier = Modifier.weight(1f),
                                 placeholder = { Text(if (onSearch == null) "Search in Google Maps" else "Search destination", style = MaterialTheme.typography.bodyMedium) },
                                 singleLine = true,
@@ -566,6 +595,8 @@ internal fun DriverNavigationScreen(
             } else null,
             includesFerry = route?.includesFerry == true,
             avoidFerries = avoidFerries,
+            ferryFallback = usedFerryFallback,
+            hasRouteError = guidanceError != null,
             onToggleFerryPreference = if (simulated == null && destination != null &&
                 (onRequestRoute != null || onDestinationRoute != null)) {
                 {
@@ -573,6 +604,8 @@ internal fun DriverNavigationScreen(
                     routeState = null
                     routeError = null
                     ferryFreeRouteUnavailable = false
+                    usedFerryFallback = false
+                    ferryRouteAllowed = false
                     offRouteSamples = 0
                     lastRequest = 0
                     routeAttempt++
@@ -584,7 +617,21 @@ internal fun DriverNavigationScreen(
             },
             manualFallback = manualFallback,
             onRetry = if (routeError != null && usableRouteOrigin && !loading) {
+                // ferryRouteAllowed deliberately survives a retry: the driver already
+                // consented to a ferry for this destination; a transient network failure
+                // must not revoke that and loop them back to the same refusal.
                 { ferryFreeRouteUnavailable = false; lastRequest = 0; routeAttempt++ }
+            } else null,
+            onUseFerryRoute = if (ferryFreeRouteUnavailable && routeError != null && !loading &&
+                (onRequestRoute != null || onDestinationRoute != null)) {
+                {
+                    ferryRouteAllowed = true
+                    ferryFreeRouteUnavailable = false
+                    routeError = null
+                    routeState = null
+                    lastRequest = 0
+                    routeAttempt++
+                }
             } else null
         )
 
@@ -626,10 +673,13 @@ private fun NavigationSheet(
     onStartGuidance: (() -> Unit)?,
     includesFerry: Boolean,
     avoidFerries: Boolean,
+    ferryFallback: Boolean = false,
+    hasRouteError: Boolean = false,
     onToggleFerryPreference: (() -> Unit)?,
     onOpenMaps: () -> Unit,
     manualFallback: Boolean,
     onRetry: (() -> Unit)?,
+    onUseFerryRoute: (() -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     Surface(
@@ -655,17 +705,14 @@ private fun NavigationSheet(
                     Text(minutesLabel(seconds), style = MaterialTheme.typography.drivingMetric)
                     Text("ETA ${clock(seconds)}", style = MaterialTheme.typography.drivingMetric)
                 }
-            } else {
-                val status = when {
-                    loading -> "Calculating route…"
-                    !live -> "Waiting for GPS"
-                    stop == null -> "GPS active"
-                    accuracy == null || accuracy > GUIDANCE_ACCURACY_METRES -> "Weak GPS"
-                    else -> "Destination pinned"
-                }
-                DepartureNote(status)
             }
-            if (includesFerry) DepartureNote("Includes a ferry crossing")
+            // No status line here: the banner above (navigationPhase) is the single source
+            // of status text on this screen. Repeating "Weak GPS"/"Waiting for GPS" in the
+            // sheet as well was the wall-of-text drivers saw.
+            if (includesFerry) DepartureNote(
+                if (ferryFallback) "No ferry-free route exists. Showing the ferry route instead."
+                else "Includes a ferry crossing"
+            )
             onStartGuidance?.let { start ->
                 DepartureButton(onClick = start, modifier = Modifier.fillMaxWidth()) { Text("Start navigation") }
             }
@@ -675,6 +722,9 @@ private fun NavigationSheet(
                         FilterChip(selected = avoidFerries, onClick = onToggleFerryPreference,
                             enabled = !loading, modifier = Modifier.heightIn(min = MireliDesign.TouchTarget),
                             label = { Text("Avoid ferries") })
+                    }
+                    if (onUseFerryRoute != null) TextButton(onClick = onUseFerryRoute) {
+                        Text("Use the ferry route", color = colors.secondary)
                     }
                     if (onRetry != null) TextButton(onClick = onRetry) {
                         Text("Retry route", color = colors.secondary)

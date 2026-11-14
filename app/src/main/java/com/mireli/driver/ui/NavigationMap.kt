@@ -57,6 +57,7 @@ import com.mireli.driver.domain.distanceMeters
 import com.mireli.driver.domain.nearestRoutePointIndex
 import kotlinx.coroutines.delay
 import org.maplibre.android.MapLibre
+import org.maplibre.android.annotations.IconFactory
 import org.maplibre.android.annotations.Marker
 import org.maplibre.android.annotations.MarkerOptions
 import org.maplibre.android.camera.CameraPosition
@@ -184,6 +185,8 @@ internal fun NavigationMap(
     satelliteToken: String? = null,
     onLongPress: ((GeoPoint) -> Unit)? = null,
     controlsBottomInset: Dp = MireliDesign.Space.xs,
+    /** Secondary pins (passenger pickups) shown alongside the main target. */
+    extraStops: List<NavigationStop> = emptyList(),
 ) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
@@ -217,6 +220,7 @@ internal fun NavigationMap(
     val latestRoute = remember { mutableStateOf(route) }
     val followWanted = remember { mutableStateOf(follow) }
     var targetMarker by remember { mutableStateOf<Marker?>(null) }
+    var extraMarkers by remember { mutableStateOf<List<Marker>>(emptyList()) }
 
     val carIcon = remember(context) { rasterise(context, R.drawable.ic_vehicle_top, 256) }
     val shadowIcon = remember(context) { carShadowBitmap() }
@@ -306,9 +310,15 @@ internal fun NavigationMap(
         loaded = false
         failed = false
         style = null
+        val darkStyle = activeLayer == MapLayer.Night || (activeLayer == MapLayer.Auto && dark)
         val builder = Style.Builder().apply { if (activeLayer == MapLayer.Satellite) fromJson(satelliteStyle()) else fromUri(styleUrl) }
         ready.setStyle(builder) { loadedStyle ->
             try {
+                // The published dark style is near-monochrome black: ground rgb(12,12,12) with
+                // buildings rgb(10,10,10), i.e. buildings darker than the ground they sit on. At
+                // phone size that reads as an empty rectangle, not a map. Re-tone it before the
+                // vehicle layers go on so the basemap carries real contrast.
+                if (darkStyle) tuneDarkBasemap(loadedStyle)
                 installLayers(loadedStyle, carIcon, shadowIcon, haloIcon)
                 style = loadedStyle
                 loaded = true
@@ -342,6 +352,23 @@ internal fun NavigationMap(
                 ready.addMarker(MarkerOptions().position(LatLng(stop.latitude, stop.longitude)).title(stop.name))
             }.getOrNull()
             if (location == null) ready.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(stop.latitude, stop.longitude), 15.0))
+        }
+    }
+
+    // Passenger pickup pins: annotations (not style layers) like the target marker, with a
+    // generated initial disc so several waiting passengers stay distinguishable at a glance.
+    LaunchedEffect(map, loaded, styleVersion, extraStops) {
+        val ready = map?.takeIf { loaded } ?: return@LaunchedEffect
+        extraMarkers.forEach { marker -> runCatching { ready.removeAnnotation(marker) } }
+        extraMarkers = extraStops.mapNotNull { stop ->
+            runCatching {
+                ready.addMarker(
+                    MarkerOptions()
+                        .position(LatLng(stop.latitude, stop.longitude))
+                        .title(stop.name)
+                        .icon(IconFactory.getInstance(context).fromBitmap(pickupPinBitmap(stop.name)))
+                )
+            }.getOrNull()
         }
     }
 
@@ -616,6 +643,83 @@ private fun installLayers(style: Style, car: Bitmap, shadow: Bitmap, halo: Bitma
     )
 }
 
+/**
+ * Re-tones the published dark basemap so it is readable at phone size.
+ *
+ * The stock dark style is deliberately near-monochrome: background rgb(12,12,12), buildings
+ * rgb(10,10,10) (darker than the ground), minor roads #181818, labels rgb(101,101,101). Measured
+ * on a real device that is a mean luminance of 14.6/255 across the map card, which a driver reads
+ * as "the map is broken" rather than "the map is dark". Every value here is lifted into a legible
+ * range while staying a night map: ground clears the buildings, roads read as roads, and labels
+ * pass contrast against the ground.
+ */
+private fun tuneDarkBasemap(style: Style) {
+    val ground = "#1B2430"
+    val building = "#2A3542"
+    val water = "#12212E"
+    val green = "#1E2E28"
+    val roadMinor = "#3A4655"
+    val roadMajor = "#4A5666"
+    val roadMotorway = "#6E7A8A"
+    val label = "#B9C4D0"
+    val labelMinor = "#8C99A8"
+
+    fun fill(id: String, color: String) {
+        runCatching { style.getLayerAs<FillLayer>(id)?.setProperties(PropertyFactory.fillColor(color)) }
+    }
+    fun line(id: String, color: String) {
+        runCatching { style.getLayerAs<LineLayer>(id)?.setProperties(PropertyFactory.lineColor(color)) }
+    }
+    fun text(id: String, color: String) {
+        runCatching { style.getLayerAs<SymbolLayer>(id)?.setProperties(PropertyFactory.textColor(color)) }
+    }
+
+    runCatching {
+        style.getLayerAs<org.maplibre.android.style.layers.BackgroundLayer>("background")
+            ?.setProperties(PropertyFactory.backgroundColor(ground))
+    }
+
+    fill("water", water)
+    fill("landcover_ice_shelf", ground)
+    fill("landcover_glacier", ground)
+    fill("landuse_residential", "#202A35")
+    fill("landcover_wood", green)
+    fill("landuse_park", green)
+    fill("building", building)
+    fill("aeroway-area", "#232D38")
+    fill("road_area_pier", roadMinor)
+
+    line("waterway", water)
+    line("aeroway-taxiway", roadMinor)
+    line("aeroway-runway-casing", roadMinor)
+    line("aeroway-runway", roadMajor)
+    line("road_pier", roadMinor)
+    line("highway_path", "#33404E")
+    line("highway_minor", roadMinor)
+    line("highway_major_casing", roadMajor)
+    line("highway_major_inner", roadMajor)
+    line("highway_major_subtle", roadMinor)
+    line("highway_motorway_casing", roadMajor)
+    line("highway_motorway_inner", roadMotorway)
+    line("highway_motorway_subtle", roadMinor)
+    line("railway_transit", "#3A4655")
+    line("railway_transit_dashline", ground)
+    line("railway_minor", "#3A4655")
+    line("railway_minor_dashline", ground)
+    line("railway", "#3A4655")
+    line("railway_dashline", ground)
+    line("boundary_state", "#4A5666")
+    line("boundary_country_z0-4", "#5A6676")
+    line("boundary_country_z5-", "#5A6676")
+
+    text("water_name", labelMinor)
+    text("highway_name_other", labelMinor)
+    text("highway_name_motorway", label)
+    for (id in listOf("place_other", "place_suburb", "place_village", "place_town", "place_city",
+        "place_city_large", "place_state", "place_country_other", "place_country_minor",
+        "place_country_major")) text(id, label)
+}
+
 private fun zoomWidth(near: Float, far: Float) = Expression.interpolate(
     Expression.exponential(1.6f), Expression.zoom(),
     Expression.stop(12, near), Expression.stop(18, far)
@@ -740,6 +844,29 @@ internal fun rasterise(context: Context, resId: Int, targetWidth: Int): Bitmap {
 }
 
 /** White puck with a very soft edge, drawn behind the car. */
+/**
+ * Passenger pickup pin: an orange disc carrying the passenger's initial, visually distinct
+ * from both the vehicle and the default target pin so waiting passengers read at a glance.
+ */
+internal fun pickupPinBitmap(label: String): Bitmap {
+    val size = 112
+    val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+    paint.color = AndroidColor.WHITE
+    canvas.drawCircle(size / 2f, size / 2f, size / 2f, paint)
+    paint.color = AndroidColor.rgb(230, 126, 0)
+    canvas.drawCircle(size / 2f, size / 2f, size / 2f - 7f, paint)
+    val initial = label.firstOrNull { it.isLetter() }?.uppercaseChar()?.toString() ?: "P"
+    paint.color = AndroidColor.WHITE
+    paint.textAlign = android.graphics.Paint.Align.CENTER
+    paint.textSize = size * 0.44f
+    paint.typeface = android.graphics.Typeface.DEFAULT_BOLD
+    val baseline = size / 2f - (paint.fontMetrics.ascent + paint.fontMetrics.descent) / 2f
+    canvas.drawText(initial, size / 2f, baseline, paint)
+    return bitmap
+}
+
 internal fun carHaloBitmap(): Bitmap {
     val size = 128
     val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)

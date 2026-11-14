@@ -5,6 +5,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.mireli.driver.domain.DriverDestination
+import com.mireli.driver.domain.DriverRoute
+import com.mireli.driver.domain.GeoPoint
 import com.mireli.driver.domain.NavigationStop
 import org.json.JSONObject
 
@@ -16,6 +19,8 @@ internal fun ActiveTripOverview(
     routeRequest: RouteRequest?,
     showMap: Boolean,
     onStartNavigation: (NavigationStop) -> Unit,
+    onPickupSearch: (suspend (String, GeoPoint?) -> List<DriverDestination>)? = null,
+    onPickupRoute: (suspend (GeoPoint, GeoPoint, Boolean) -> DriverRoute)? = null,
 ) {
     val phase = trip.optString("phase")
     val colors = MaterialTheme.colorScheme
@@ -34,6 +39,8 @@ internal fun ActiveTripOverview(
             trip = trip,
             onRequestRoute = routeRequest,
             onStartNavigation = onStartNavigation,
+            onPickupSearch = onPickupSearch,
+            onPickupRoute = onPickupRoute,
             compact = true,
             seatsWaiting = trip.seatsWaiting().takeIf { trip.parties().isNotEmpty() },
             enabled = showMap,

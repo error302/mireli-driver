@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.mireli.driver.domain.DriverNavigation
+import com.mireli.driver.domain.GeoPoint
 import com.mireli.driver.domain.NavigationStop
 import org.json.JSONObject
 import java.time.Instant
@@ -54,6 +55,34 @@ internal fun JSONObject.bookedStageIds(): Set<String> =
     passengerManifest().mapNotNull { it.opt("stageId") as? String }.toSet()
 
 internal fun JSONObject.hasDoorAddress(): Boolean = passengerManifest().any { it.optBoolean("homePickup") }
+
+/** A booked home (door) pickup/drop-off: the passenger waits at an address, not a stage. */
+internal data class PassengerPickup(
+    val bookingId: String,
+    val name: String,
+    val seats: Int,
+    val address: String,
+    val remaining: Int,
+    val boarded: Int,
+    /** Exact pin when the booking captured one; null means the address must be geocoded. */
+    val point: GeoPoint? = null,
+)
+
+internal fun JSONObject.passengerPickups(): List<PassengerPickup> =
+    passengerManifest().mapNotNull { entry ->
+        if (!entry.optBoolean("homePickup")) return@mapNotNull null
+        val address = entry.optString("homeAddress").takeIf { it.isNotBlank() && it != "null" }
+            ?: return@mapNotNull null
+        val seats = entry.optInt("seats", 0)
+        val boarded = entry.optInt("boarded", 0)
+        val remaining = entry.optInt("remaining", (seats - boarded - entry.optInt("noShow", 0)).coerceAtLeast(0))
+        val exact = GeoPoint(
+            entry.optDouble("pickupLatitude", Double.NaN),
+            entry.optDouble("pickupLongitude", Double.NaN)
+        ).takeIf { it.valid }
+        PassengerPickup(entry.optString("id"), entry.optString("name", "Passenger"),
+            seats, address, remaining, boarded, exact)
+    }
 
 internal fun JSONObject.primaryNavigationStop(stops: List<NavigationStop> = navigationStops()): NavigationStop? =
     DriverNavigation.primaryStop(stops, optString("direction"), optString("phase"), bookedStageIds(), hasDoorAddress())

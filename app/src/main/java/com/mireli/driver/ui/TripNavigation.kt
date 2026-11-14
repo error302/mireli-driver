@@ -35,6 +35,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.mireli.driver.BuildConfig
 import com.mireli.driver.R
+import com.mireli.driver.data.DriverServiceException
+import com.mireli.driver.domain.DriverDestination
 import com.mireli.driver.domain.DriverNavigation
 import com.mireli.driver.domain.DriverRoute
 import com.mireli.driver.domain.GeoPoint
@@ -45,6 +47,7 @@ import com.mireli.driver.domain.distanceMeters
 import com.mireli.driver.domain.estimatedRemainingSeconds
 import com.mireli.driver.domain.nearestRoutePointIndex
 import com.mireli.driver.domain.remainingDistanceMeters
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import org.json.JSONObject
 import org.maplibre.android.MapLibre
@@ -121,6 +124,8 @@ internal fun openMaps(context:Context,url:String):Boolean {
 
 @Composable fun TripNavigation(trip:JSONObject,onNavigate:((String)->Boolean)?=null,onRequestRoute:RouteRequest?=null,
     onStartNavigation: ((NavigationStop) -> Unit)? = null,
+    onPickupSearch: (suspend (String, GeoPoint?) -> List<DriverDestination>)? = null,
+    onPickupRoute: (suspend (GeoPoint, GeoPoint, Boolean) -> DriverRoute)? = null,
     compact: Boolean = false, seatsWaiting: Int? = null, enabled: Boolean = true) {
     val context=LocalContext.current
     val lifecycleOwner=LocalLifecycleOwner.current
@@ -159,14 +164,58 @@ internal fun openMaps(context:Context,url:String):Boolean {
     val stops = trip.navigationStops()
     val phase = trip.optString("phase")
     val direction = trip.optString("direction")
+    // Home (door) pickups and drop-offs: passengers waiting at an address along the way,
+    // not at a stage. Each resolves to a map pin — an exact booking pin when one exists,
+    // otherwise the address geocoded against the route corridor — and becomes a target
+    // the driver can navigate to like any stage.
+    val pickups = remember(tripId, phase) {
+        val booked = trip.passengerPickups()
+        when (phase) {
+            "accepted", "at_pickup" -> booked.filter { it.remaining > 0 }
+            "in_progress" -> booked.filter { it.boarded > 0 }
+            else -> emptyList()
+        }
+    }
+    var pickupPoints by remember(tripId) { mutableStateOf<Map<String, GeoPoint>>(emptyMap()) }
+    var pickupFailed by remember(tripId) { mutableStateOf<Set<String>>(emptySet()) }
+    var pickupFerryAllowed by remember(tripId) { mutableStateOf(false) }
+    var pickupFerryFailed by remember(tripId) { mutableStateOf(false) }
+    var pickupUsedFerry by remember(tripId) { mutableStateOf(false) }
+    val pickupLabel = if (direction == "TO_TERMINUS") "Pickup" else "Drop-off"
+    LaunchedEffect(tripId, pickups.map { it.bookingId }) {
+        val corridor = stops.filter { it.valid }.map { GeoPoint(it.latitude, it.longitude) }
+        for (pickup in pickups) {
+            if (pickup.bookingId in pickupPoints || pickup.bookingId in pickupFailed) continue
+            val exact = pickup.point
+            if (exact != null) {
+                pickupPoints = pickupPoints + (pickup.bookingId to exact)
+                continue
+            }
+            val search = onPickupSearch ?: continue
+            val candidates = runCatching { search(pickup.address, corridor.firstOrNull()) }.getOrNull()
+            // Free-text addresses ("opposite Naivas, Bamburi") can match famous namesakes
+            // across the country; the match nearest the route corridor is the passenger.
+            val best = candidates?.filter { it.point.valid }?.minByOrNull { candidate ->
+                corridor.minOfOrNull { distanceMeters(candidate.point, it) } ?: Double.MAX_VALUE
+            }
+            if (best != null) pickupPoints = pickupPoints + (pickup.bookingId to best.point)
+            else pickupFailed = pickupFailed + pickup.bookingId
+        }
+    }
+    val pickupStops = pickups.mapNotNull { pickup ->
+        pickupPoints[pickup.bookingId]?.let { point ->
+            NavigationStop("pickup-${pickup.bookingId}", "${pickup.name} · $pickupLabel", point.latitude, point.longitude)
+        }
+    }
     val defaultTarget = trip.primaryNavigationStop(stops) ?: if (compact && phase == "assigned")
         DriverNavigation.primaryStop(stops, direction, "accepted", trip.bookedStageIds(), trip.hasDoorAddress()) else null
     var selectedStopId by rememberSaveable(tripId, phase, defaultTarget?.id){mutableStateOf(defaultTarget?.id)}
     LaunchedEffect(tripId,selectedStopId) {
         route = null; routeError = null; offRouteSamples = 0; lastRouteRequest = 0L
         routeLoading = false; routeRequestRevision++
+        pickupFerryAllowed = false; pickupFerryFailed = false; pickupUsedFerry = false
     }
-    val target=stops.firstOrNull{it.id==selectedStopId}?.takeIf{it.valid}
+    val target=(stops + pickupStops).firstOrNull{it.id==selectedStopId}?.takeIf{it.valid}
     val ordered=DriverNavigation.orderedStops(stops,direction)
     val permissions=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()){result->
         if (!routingAvailable) return@rememberLauncherForActivityResult
@@ -236,6 +285,30 @@ internal fun openMaps(context:Context,url:String):Boolean {
         val shouldRequest=currentRoute==null||offRouteSamples>=3
         val now=SystemClock.elapsedRealtime()
         if(shouldRequest&&(lastRouteRequest==0L||now-lastRouteRequest>=30000L)) {
+            if (stop.id.startsWith("pickup-")) {
+                // Pickups have no stage id for the trip routing service, so route point to
+                // point. Ferry policy matches the full-screen navigator: ask ferry-free
+                // first; a ferry is used only after the driver's explicit tap.
+                val destinationRoute = onPickupRoute
+                if (destinationRoute == null) { routeLoading = false; return@LaunchedEffect }
+                routeLoading = true; routeError = null; lastRouteRequest = now
+                try {
+                    val fresh = destinationRoute(point, GeoPoint(stop.latitude, stop.longitude), !pickupFerryAllowed)
+                    route = fresh; routeError = null; offRouteSamples = 0
+                    pickupUsedFerry = pickupFerryAllowed && fresh.includesFerry == true
+                    pickupFerryFailed = false
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    val noFerryFree = (error as? DriverServiceException)?.code == "NO_FERRY_FREE_ROUTE"
+                    pickupFerryFailed = noFerryFree
+                    routeError = if (noFerryFree) "No ferry-free route to this ${pickupLabel.lowercase()}."
+                        else error.message?.take(220) ?: "Route guidance is unavailable. Use your map app or contact dispatch."
+                } finally {
+                    routeLoading = false
+                }
+                return@LaunchedEffect
+            }
             val request=onRequestRoute
             if(request==null)return@LaunchedEffect
             val revision = routeRequestRevision
@@ -284,7 +357,8 @@ internal fun openMaps(context:Context,url:String):Boolean {
         if (compact) {
             if (enabled) NavigationMap(target, currentLocation, locationFix, route,
                 Modifier.fillMaxWidth().height(208.dp).clip(MaterialTheme.shapes.medium),
-                interactive = false, controls = false)
+                interactive = false, controls = false,
+                extraStops = pickupStops.filter { it.id != target?.id })
             TripMetrics(eta, distanceLeft, seatsWaiting)
             if (enabled && routingAvailable && phase != "assigned") {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(MireliDesign.Space.xs)) {
@@ -307,7 +381,8 @@ internal fun openMaps(context:Context,url:String):Boolean {
             }
         } else {
         Text(if(phase=="in_progress")"Route destination · ${target.name}" else "Route pickup · ${target.name}")
-        NavigationMap(target,currentLocation,locationFix,route,Modifier.fillMaxWidth().height(300.dp))
+        NavigationMap(target,currentLocation,locationFix,route,Modifier.fillMaxWidth().height(300.dp),
+            extraStops = pickupStops.filter { it.id != target?.id })
         Text("© OpenStreetMap contributors · OpenFreeMap",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         if(!routingAvailable) {
             Text("In-app directions are unavailable. Open Google Maps for directions to the assigned stop.",style=MaterialTheme.typography.bodySmall)
@@ -323,7 +398,7 @@ internal fun openMaps(context:Context,url:String):Boolean {
                 }
             }
             if(routeLoading)LinearProgressIndicator(Modifier.fillMaxWidth())
-            if(atStop)Text("You are at the assigned stop.",style=MaterialTheme.typography.titleMedium,color=MaterialTheme.colorScheme.primary)
+            if(atStop)Text(if(target?.id?.startsWith("pickup-")==true)"You are at the ${pickupLabel.lowercase()} point." else "You are at the assigned stop.",style=MaterialTheme.typography.titleMedium,color=MaterialTheme.colorScheme.primary)
             else nextManeuver?.let{maneuver->ManeuverCard(maneuver,maneuverDistance)}
             if (route != null && !usableGuidanceFix) {
                 Text("GPS signal is weak. Follow the highlighted route and road signs.",
@@ -357,6 +432,25 @@ internal fun openMaps(context:Context,url:String):Boolean {
             items(validStops, key = { it.id }) { stop ->
                 FilterChip(selected = stop.id == target?.id, onClick = { selectedStopId = stop.id }, label = { Text(stop.name) })
             }
+        }
+    }
+
+    if (enabled && pickups.isNotEmpty()) {
+        Text("Passenger ${pickupLabel.lowercase()}s", style = MaterialTheme.typography.labelLarge)
+        if (pickupStops.isNotEmpty()) LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(pickupStops, key = { it.id }) { stop ->
+                FilterChip(selected = stop.id == target?.id, onClick = { selectedStopId = stop.id }, label = { Text(stop.name) })
+            }
+        }
+        pickups.filter { it.bookingId in pickupFailed }.forEach { pickup ->
+            DepartureNote("Couldn't pin ${pickup.name}'s address (${pickup.address}). See the manifest to call them or open the address in a maps app.")
+        }
+        if (pickupUsedFerry) DepartureNote("This route uses the ferry — no ferry-free route was found.")
+        if (pickupFerryFailed && target?.id?.startsWith("pickup-") == true) TextButton(onClick = {
+            pickupFerryAllowed = true; pickupFerryFailed = false; routeError = null
+            lastRouteRequest = 0L; routeRequestRevision++
+        }, modifier = Modifier.heightIn(min = MireliDesign.TouchTarget)) {
+            Text("Use the ferry route", color = MaterialTheme.colorScheme.secondary)
         }
     }
 

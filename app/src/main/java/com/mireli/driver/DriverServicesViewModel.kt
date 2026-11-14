@@ -338,15 +338,38 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
     }
     suspend fun searchDestinations(query: String, near: GeoPoint?): List<DriverDestination> {
         val token = session?.token ?: error("Sign in again to search for destinations.")
-        val body = JSONObject().put("query", query)
-        if (near != null) body.put("latitude", near.latitude).put("longitude", near.longitude)
-        val response = api.request("/navigation/search", "POST", token, body)
-        val places = response.getJSONArray("places")
-        return List(places.length()) { index ->
-            val place = places.getJSONObject(index)
-            DriverDestination(place.getString("id"), place.getString("name"), place.optString("detail"),
-                GeoPoint(place.getDouble("latitude"), place.getDouble("longitude")))
-        }.filter { it.point.valid }
+        // Built-in catalog first: it carries the words drivers actually type ("SGR",
+        // "ferry", "airport") that the provider's title-only text search can never match,
+        // and it keeps common destinations searchable when the provider is unreachable.
+        val local = com.mireli.driver.domain.KnownPlaces.search(query, near)
+        val remote = runCatching {
+            val body = JSONObject().put("query", query)
+            if (near != null) body.put("latitude", near.latitude).put("longitude", near.longitude)
+            val response = api.request("/navigation/search", "POST", token, body)
+            val places = response.getJSONArray("places")
+            val found = List(places.length()) { index ->
+                val place = places.getJSONObject(index)
+                DriverDestination(place.getString("id"), place.getString("name"), place.optString("detail"),
+                    GeoPoint(place.getDouble("latitude"), place.getDouble("longitude")))
+            }.filter { it.point.valid }
+            // The provider ranks by text relevance alone, so "SGR" from Mombasa returns Nairobi
+            // Terminus first and the driver taps a 500 km destination by accident. Rank anything
+            // within driving range ahead of the rest, keeping the provider's order inside each group.
+            if (near == null) found
+            else {
+                val (close, far) = found.partition { com.mireli.driver.domain.distanceMeters(near, it.point) <= 150_000.0 }
+                close + far
+            }
+        }.getOrElse { error -> if (local.isNotEmpty()) return local else throw error }
+        // Drop provider results that duplicate a catalog place: same name (provider POI
+        // points can sit >250 m from the catalog point, e.g. across an airport), or same spot.
+        val deduped = remote.filter { provider ->
+            local.none {
+                it.name.equals(provider.name, ignoreCase = true) ||
+                    com.mireli.driver.domain.distanceMeters(it.point, provider.point) < 250.0
+            }
+        }
+        return (local + deduped).take(10)
     }
 
     suspend fun destinationRoute(origin: GeoPoint, target: GeoPoint, avoidFerries: Boolean): DriverRoute {
