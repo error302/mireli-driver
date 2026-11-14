@@ -206,7 +206,8 @@ internal fun NavigationMap(
     var styleVersion by remember { mutableIntStateOf(0) }
     var failed by remember { mutableStateOf(false) }
     var cameraReady by remember { mutableStateOf(false) }
-    var following by remember { mutableStateOf(follow) }
+    var following by remember(follow, target?.id) { mutableStateOf(follow) }
+    val stopFollowing by rememberUpdatedState({ following = false })
     var lastHeading by remember { mutableStateOf(0.0) }
 
     // The interpolation loop reads these every tick, so they must survive recomposition.
@@ -273,7 +274,7 @@ internal fun NavigationMap(
             ready.addOnCameraMoveStartedListener { reason ->
                 // Only a real finger gesture stops the chase; our own animations never do.
                 if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE) {
-                    following = false
+                    stopFollowing()
                     followWanted.value = false
                 }
             }
@@ -294,7 +295,7 @@ internal fun NavigationMap(
     latestHeading.value = location?.let { point ->
         resolveHeading(fix?.takeIf { it.hasBearing() }?.bearing, fix?.speed, lastHeading, route, point)
     } ?: lastHeading
-    followWanted.value = follow && following
+    followWanted.value = following
 
     // Style loads, initial and on layer switch. installLayers re-applies the vehicle, route and
     // accuracy layers on the fresh style, and styleVersion restarts the render loop and marker.

@@ -222,6 +222,7 @@ internal fun DriverNavigationScreen(
     var searching by remember { mutableStateOf(false) }
     var searchError by remember { mutableStateOf<String?>(null) }
     var previewStop by remember { mutableStateOf<NavigationStop?>(null) }
+    var guidanceStarted by rememberSaveable(previewStop?.id) { mutableStateOf(false) }
     val destination = stop ?: previewStop
     var searchJob by remember { mutableStateOf<Job?>(null) }
     val scope = rememberCoroutineScope()
@@ -373,7 +374,8 @@ internal fun DriverNavigationScreen(
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         NavigationMap(
             target = mapTarget, location = current, fix = position.fix, route = route,
-            modifier = Modifier.fillMaxSize(), interactive = true, follow = stop != null || simulated != null,
+            modifier = Modifier.fillMaxSize(), interactive = true,
+            follow = stop != null || simulated != null || guidanceStarted,
             satelliteToken = satelliteToken,
             controlsBottomInset = controlsInset,
             onLongPress = if (stop == null && simulated == null) { point ->
@@ -558,6 +560,10 @@ internal fun DriverNavigationScreen(
             expanded = expanded,
             onToggle = { expanded = !expanded },
             canOpenMaps = mapTarget != null,
+            onStartGuidance = if (stop == null && simulated == null && previewStop != null &&
+                route != null && !guidanceStarted) {
+                { guidanceStarted = true }
+            } else null,
             includesFerry = route?.includesFerry == true,
             avoidFerries = avoidFerries,
             onToggleFerryPreference = if (simulated == null && destination != null &&
@@ -617,6 +623,7 @@ private fun NavigationSheet(
     expanded: Boolean,
     onToggle: () -> Unit,
     canOpenMaps: Boolean,
+    onStartGuidance: (() -> Unit)?,
     includesFerry: Boolean,
     avoidFerries: Boolean,
     onToggleFerryPreference: (() -> Unit)?,
@@ -659,6 +666,9 @@ private fun NavigationSheet(
                 DepartureNote(status)
             }
             if (includesFerry) DepartureNote("Includes a ferry crossing")
+            onStartGuidance?.let { start ->
+                DepartureButton(onClick = start, modifier = Modifier.fillMaxWidth()) { Text("Start navigation") }
+            }
             if (canOpenMaps) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(MireliDesign.Space.xs)) {
                     if (onToggleFerryPreference != null) {
