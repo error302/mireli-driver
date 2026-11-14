@@ -200,7 +200,7 @@ class StagingServicesTest {
             screenshot("compact-home")
         }
         rule.onNodeWithText("Earnings",useUnmergedTree=true).performClick()
-        reveal("No settlement records yet.")
+        reveal("No settlements for this period.")
         rule.onNodeWithText("No settlement records yet.",substring=true).assertExists()
         rule.onNodeWithTag("driver_service_list").performScrollToIndex(0)
         if (captureDesign) screenshot("compact-earnings")
