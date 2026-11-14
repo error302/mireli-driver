@@ -12,6 +12,7 @@ import com.mireli.driver.ui.EarningsOverview
 import com.mireli.driver.ui.DocumentSelectionDialog
 import com.mireli.driver.ui.DriverIdentity
 import com.mireli.driver.ui.DriverHomeDashboard
+import com.mireli.driver.ui.DriverHomeTopBar
 import com.mireli.driver.ui.MireliTheme
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -24,10 +25,15 @@ class DeparturePagesTest {
     @Test fun applicantsCanOpenTheLiveMapBeforeApproval() {
         var opened = false
         rule.setContent { MireliTheme { Surface {
-            DriverHomeDashboard(name = "Pilot Driver", eligible = false, verified = false, applicationStatus = "draft",
-                tripsCurrent = true, trips = emptyList(), onRefresh = {}, onOpenTrips = {},
-                onOpenAccount = {}, onOpenTrip = {}, onStartNavigation = { _, _ -> }, onOpenMap = { opened = true })
+            Column {
+                DriverHomeTopBar(onSupport = {})
+                DriverHomeDashboard(name = "Pilot Driver", eligible = false, verified = false, applicationStatus = "draft",
+                    tripsCurrent = true, trips = emptyList(), onRefresh = {}, onOpenTrips = {},
+                    onOpenAccount = {}, onOpenTrip = {}, onStartNavigation = { _, _ -> }, onOpenMap = { opened = true })
+            }
         } } }
+        rule.onNodeWithText("Mireli Driver").assertIsDisplayed()
+        rule.onNodeWithContentDescription("Help and support").assertIsDisplayed()
         rule.onNodeWithText("Continue onboarding").assertIsDisplayed()
         rule.onNodeWithTag("home_location_preview").assertIsDisplayed()
         rule.onNodeWithText("Your location").assertIsDisplayed()

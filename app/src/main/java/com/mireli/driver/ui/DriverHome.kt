@@ -1,5 +1,6 @@
 package com.mireli.driver.ui
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
@@ -14,11 +15,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.mireli.driver.domain.NavigationStop
+import com.mireli.driver.R
 import com.mireli.driver.TrainSchedule
 import com.mireli.driver.domain.SgrTimetable
 import kotlinx.coroutines.delay
@@ -163,10 +168,20 @@ private fun DriverAvatar(name: String?, size: Dp = 44.dp) {
 
 @Composable
 internal fun DriverHomeTopBar(onSupport: () -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text("Home", Modifier.weight(1f), style = MaterialTheme.typography.pageTitle)
-        IconButton(onClick = onSupport) {
-            Icon(MireliIcons.HeadsetMic, "Help and support", tint = MaterialTheme.colorScheme.secondary)
+    val colors = MaterialTheme.colorScheme
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Surface(shape = MaterialTheme.shapes.small, color = Color.White) {
+            Image(painterResource(R.drawable.mireli_driver_logo), contentDescription = null,
+                modifier = Modifier.size(40.dp).padding(3.dp))
+        }
+        Text("Mireli Driver", Modifier.weight(1f).semantics { heading() },
+            color = colors.secondary, style = MaterialTheme.typography.pageTitle)
+        IconButton(onClick = onSupport, modifier = Modifier.size(MireliDesign.TouchTarget)) {
+            Icon(MireliIcons.HeadsetMic, "Help and support", tint = colors.secondary)
         }
     }
 }
