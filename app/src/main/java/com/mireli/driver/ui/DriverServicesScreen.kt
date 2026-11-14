@@ -41,6 +41,7 @@ import com.mireli.driver.DriverServiceState
 import com.mireli.driver.DriverServicesViewModel
 import com.mireli.driver.domain.NavigationStop
 import com.mireli.driver.domain.OnboardingPolicy
+import com.mireli.driver.domain.StatementPeriod
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URI
@@ -91,6 +92,7 @@ private fun policyLink(raw: String): String? = runCatching {
     var selectedFile by rememberSaveable { mutableStateOf<Uri?>(null) }
     var removeDocumentId by rememberSaveable { mutableStateOf<String?>(null) }
     var showPayoutDetails by rememberSaveable { mutableStateOf(false) }
+    var statementPeriod by rememberSaveable { mutableStateOf(StatementPeriod.All) }
     var supportFromEarnings by rememberSaveable { mutableStateOf(false) }
     var previouslySignedIn by remember {mutableStateOf(false)}
     LaunchedEffect(state.signedIn) {
@@ -112,6 +114,7 @@ private fun policyLink(raw: String): String? = runCatching {
             applicationStep = 0
             expandedDocumentGroup = null
             showPayoutDetails = false
+            statementPeriod = StatementPeriod.All
             supportFromEarnings = false
             payoutPhone = ""
             entry = DriverEntry.Welcome
@@ -245,7 +248,7 @@ private fun policyLink(raw: String): String? = runCatching {
     // when an assignment enters an active phase and stops when none remain.
     val trackingContext = androidx.compose.ui.platform.LocalContext.current
     val trackingTrip = remember(state.trips) {
-        state.trips?.optJSONArray("trips")?.objects()
+        state.trips?.takeUnless { it.optBoolean("cached") }?.optJSONArray("trips")?.objects()
             ?.filter { it.optString("phase") in listOf("accepted", "at_pickup", "in_progress") }
             ?.minWithOrNull(transferOrder())
     }
@@ -263,7 +266,7 @@ private fun policyLink(raw: String): String? = runCatching {
     }
     val eligible = state.eligibility?.optBoolean("eligible") == true
     val trips = state.trips?.optJSONArray("trips")?.objects()
-    val assignment = if (section == 3 && !tripHistory && state.tripDataCurrent) {
+    val assignment = if (section == 3 && !tripHistory) {
         trips?.filter { it.isActiveTransfer() }?.minWithOrNull(
             compareBy<JSONObject> { it.optString("id") != highlightedTripId }.then(transferOrder())
         )
@@ -287,10 +290,8 @@ private fun policyLink(raw: String): String? = runCatching {
                     Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
                         Column(Modifier.fillMaxWidth().padding(horizontal = MireliDesign.Space.md,
                             vertical = MireliDesign.Space.xs)) {
-                            Text(assignment.optString("routeName").ifBlank { "Current assignment" },
-                                style = MaterialTheme.typography.labelLarge, maxLines = 1)
                             DepartureButton(onClick = { confirmTripAction = true }, enabled = !busy,
-                                modifier = Modifier.fillMaxWidth()) { Text(primaryAction.second) }
+                                drivingAction = true, modifier = Modifier.fillMaxWidth()) { Text(primaryAction.second) }
                         }
                     }
                 }
@@ -357,17 +358,19 @@ private fun policyLink(raw: String): String? = runCatching {
             if(BuildConfig.DRIVER_SERVICE_TEST)item {Card {Text("STAGING · Simulated sign-in and payouts",Modifier.padding(16.dp))}}
             if(state.loading)item {LinearProgressIndicator(Modifier.fillMaxWidth())}
             state.error?.let {error->item {Card(colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.errorContainer)){Text(error,Modifier.padding(16.dp),color=MaterialTheme.colorScheme.onErrorContainer)}} }
-                if(state.pendingTripAction)item {Card{Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
-                    Text("One saved trip action needs confirmation",style=MaterialTheme.typography.titleMedium)
-                    Text("The app keeps the same action ID after a connection failure or restart. Check it before making another trip change.")
-                    Button(onClick=vm::retryTripAction,enabled=!state.loading){Text("Check saved action")}
-                }}}
-                if((section==3 || section==4&&state.eligibility?.optBoolean("eligible")==true) &&
-                    !state.loading && !state.tripDataCurrent)item {
-                    Column(verticalArrangement=Arrangement.spacedBy(6.dp)) {
-                        DriverNotice(MireliIcons.Refresh,"Assignments need a refresh",
-                            "Refresh to check for changes before updating a trip.")
-                        OutlinedButton(onClick=vm::refresh,shape=RoundedCornerShape(12.dp)) {Text("Refresh assignments")}
+                if (section == 3 || section == 4) {
+                    if (state.pendingTripAction) item {
+                        Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.small) {
+                            Column(Modifier.fillMaxWidth().padding(MireliDesign.Space.sm)) {
+                                Text(if (state.loading) "Syncing trip action…" else "Trip action waiting to sync",
+                                    style = MaterialTheme.typography.titleSmall)
+                                if (!state.loading) TextButton(onClick = vm::retryTripAction) {
+                                    Text("Check saved action")
+                                }
+                            }
+                        }
+                    } else if ((section == 3 || eligible) && !state.loading && !state.tripDataCurrent) item {
+                        TextButton(onClick = vm::refresh) { Text("Refresh assignments") }
                     }
                 }
                 if(section==4) {
@@ -525,13 +528,22 @@ private fun policyLink(raw: String): String? = runCatching {
                     }}
                 }else if(section==1) {
                     fun shown(minor:Long):String=if(hideBalance)"KSh ••••" else money(minor)
-                    state.earnings?.let{statement->
-                        val totals = statement.getJSONArray("totals").objects()
-                        val lines = statement.getJSONArray("lines").objects()
+                    val statementNow = (state.earnings?.opt("serverTime") as? String)
+                        ?.let { runCatching { java.time.Instant.parse(it) }.getOrNull() } ?: java.time.Instant.now()
+                    state.earnings?.let { statement ->
+                        val allLines = statement.getJSONArray("lines").objects()
+                        val cursor = statement.opt("nextCursor") as? String
+                        val allTime = statementPeriod == StatementPeriod.All
+                        val lines = allLines.filter { statementPeriod.includes(it, statementNow) }
+                        val periodComplete = allTime || cursor == null
+                        val totals = if (allTime) statement.getJSONArray("totals").objects() else lines
                         val paid = totals.filter { it.getString("status") == "completed" }.sumOf { it.getLong("netMinor") }
                         item {
                             EarningsOverview(
-                                paid = shown(paid), hidden = hideBalance,
+                                paid = if (periodComplete) shown(paid) else "—",
+                                period = statementPeriod,
+                                onPeriodChange = { statementPeriod = it },
+                                hidden = hideBalance,
                                 onToggleBalance = {
                                     hideBalance = !hideBalance
                                     earningsPrefs.edit().putBoolean("hideBalance", hideBalance).apply()
@@ -555,20 +567,27 @@ private fun policyLink(raw: String): String? = runCatching {
                             )
                         }
                         val pendingTotals = totals.filterNot { it.getString("status") == "completed" }
-                        if (pendingTotals.isNotEmpty()) item {
+                            .groupBy { it.getString("status") }
+                        if (periodComplete && pendingTotals.isNotEmpty()) item {
                             Column(verticalArrangement = Arrangement.spacedBy(MireliDesign.Space.xs)) {
                                 DepartureSection("Unsettled earnings")
-                                pendingTotals.forEach {
-                                    DepartureValueRow(it.getString("status").settlementLabel(), shown(it.getLong("netMinor")))
+                                pendingTotals.forEach { (status, rows) ->
+                                    DepartureValueRow(status.settlementLabel(), shown(rows.sumOf { it.getLong("netMinor") }))
                                 }
                             }
                         }
                         item {
                             DepartureSection("Settlements")
-                            if (lines.isEmpty()) DepartureNote("No settlement records yet.")
+                            if (lines.isEmpty() && periodComplete) DepartureNote("No settlements for this period.")
+                            if (!periodComplete) DepartureNote("Load earlier settlements to see the full period totals.")
                         }
                         itemsIndexed(lines, key = { _, line -> line.getString("id") }) { index, line ->
                             DepartureSettlement(line, hideBalance, Modifier.staggerIn(index.coerceAtMost(5)))
+                        }
+                        if (cursor != null) item {
+                            TextButton(onClick = vm::loadEarlierEarnings, enabled = !state.loading) {
+                                Text("Load earlier settlements")
+                            }
                         }
                     }
                     if (state.earnings == null) item {
@@ -586,13 +605,26 @@ private fun policyLink(raw: String): String? = runCatching {
                             tripHistory = history
                         }
                     }
-                    if (!tripHistory && !eligible && visibleTrips.isNotEmpty()) item {
+                    assignment?.let { trip ->
+                        item(key = "active-trip-overview-${trip.optString("id")}") {
+                            ActiveTripOverview(
+                                trip = trip,
+                                current = state.tripDataCurrent,
+                                pendingAction = state.pendingTripAction,
+                                routeRequest = routeRequest,
+                                showMap = navTarget == null,
+                                onStartNavigation = { stop -> navTarget = NavTarget(trip.optString("id"), stop) },
+                            )
+                        }
+                    }
+                    if (!tripHistory && !eligible && visibleTrips.isNotEmpty() && state.tripDataCurrent) item {
                         DepartureDisclosure("Driver approval needed") {
                             TextButton(onClick = { section = 0 }) { Text("Check documents") }
                         }
                     }
-                    itemsIndexed(visibleTrips,key={_, trip -> trip.getString("id")}){index, trip->
-                        LiveTripCard(trip,state.loading||state.pendingTripAction||!state.tripDataCurrent,
+                    itemsIndexed(visibleTrips.filterNot { state.trips?.optBoolean("cached") == true }, key={_, trip -> trip.getString("id")}){index, trip->
+                        val active = assignment?.optString("id") == trip.optString("id")
+                        LiveTripCard(trip,busy,
                             state.eligibility?.optBoolean("eligible")==true,vm::tripCommand,routeRequest,
                             Modifier.staggerIn(index.coerceAtMost(5)), openInitially = trip.optString("id") == highlightedTripId ||
                                 (!tripHistory && index == 0),
@@ -600,7 +632,8 @@ private fun policyLink(raw: String): String? = runCatching {
                             onSearchAddress = if (state.destinationSearchOpen) { address ->
                                 navTarget = NavTarget(null, null, address)
                             } else null,
-                            primaryActionAnchored = assignment?.optString("id") == trip.optString("id"))
+                            showNavigation = !active,
+                            primaryActionAnchored = active)
                     }
                     if(visibleTrips.isEmpty())item {
                         Column(Modifier.fillMaxWidth().padding(vertical = 10.dp),

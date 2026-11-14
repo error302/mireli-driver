@@ -237,13 +237,16 @@ internal fun DepartureButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    drivingAction: Boolean = false,
     content: @Composable RowScope.() -> Unit
 ) {
     val interaction = remember { MutableInteractionSource() }
     Button(onClick = onClick, modifier = modifier.heightIn(min = MireliDesign.PrimaryActionHeight).pressScale(interaction),
         enabled = enabled, shape = CircleShape, interactionSource = interaction,
-        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary,
-            contentColor = MaterialTheme.colorScheme.onSecondary), content = content)
+        colors = ButtonDefaults.buttonColors(
+            containerColor = if (drivingAction) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
+            contentColor = if (drivingAction) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondary),
+        content = content)
 }
 
 @Composable

@@ -226,8 +226,8 @@ internal fun NavigationMap(
         MapLibre.getInstance(context.applicationContext)
         HttpRequestUtil.setOkHttpClient(DriverMapHttp.client)
         HttpRequestUtil.setPrintRequestUrlOnFailure(false)
-        if (homePreview) {
-            // TextureView follows the rounded clip and scrolls with the Compose dashboard.
+        if (!interactive) {
+            // TextureView follows the rounded clip and scrolls with the Compose screen.
             MapView(context, MapLibreMapOptions.createFromAttributes(context).textureMode(true))
         } else {
             MapView(context)

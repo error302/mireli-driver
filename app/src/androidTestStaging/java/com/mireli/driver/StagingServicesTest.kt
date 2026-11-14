@@ -81,15 +81,25 @@ class StagingServicesTest {
         rule.onNodeWithText("Confirm").performClick()
         rule.waitUntil(30000){rule.onAllNodesWithText("2 boarded · 0 no-show · 0 waiting").fetchSemanticsNodes().isNotEmpty()}
         screenshot("connected-boarding")
+        awaitAction("Start journey")
         rule.onNodeWithText("Start journey").performClick();rule.onNodeWithText("Confirm").performClick()
         awaitAction("Complete trip")
+        rule.onNodeWithTag("driver_service_list").performScrollToIndex(0)
+        reveal("Drop-off · Nyali Centre")
+        screenshot("connected-active-trip")
         rule.onNodeWithText("Complete trip").performClick();rule.onNodeWithText("Confirm").performClick()
         rule.waitUntil(30000){runBlocking{api.request("/trips",token=session.token)}.getJSONArray("trips").let{rows->(0 until rows.length()).any{rows.getJSONObject(it).getString("id")==tripId&&rows.getJSONObject(it).getString("phase")=="completed"}}}
         assertFalse(runBlocking{api.request("/trips",token=session.token)}.getJSONArray("trips").let{rows->(0 until rows.length()).first{rows.getJSONObject(it).getString("id")==tripId}.let{rows.getJSONObject(it).getJSONArray("passengers").length()>0}})
         rule.onNodeWithText("Earnings",useUnmergedTree=true).performClick()
         val line=runBlocking{api.request("/earnings",token=session.token)}.getJSONArray("lines").let{rows->(0 until rows.length()).map{rows.getJSONObject(it)}.first{it.optString("tripId")==tripId}}
         assertEquals("queued",line.getString("status"));assertEquals(180000,line.getInt("netMinor"))
-        rule.onNodeWithTag("driver_service_list").performScrollToIndex(0);screenshot("connected-earnings")
+        rule.onNodeWithTag("driver_service_list").performScrollToIndex(0)
+        reveal("This week")
+        rule.onNodeWithText("This week").performClick()
+        reveal("Unsettled earnings")
+        rule.onNodeWithText("Queued").assertExists()
+        rule.onNodeWithTag("driver_service_list").performScrollToIndex(0)
+        screenshot("connected-earnings")
         assertNull(sessions.savedAction(driverId))
     }
     @Test fun nativeDriverCanRegisterCompleteOnboardingAndSignOut() {

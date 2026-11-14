@@ -16,6 +16,7 @@ import javax.crypto.spec.GCMParameterSpec
 data class DriverSession(val token:String,val expiresAt:String)
 class DriverSessionStore(context:Context) {
     private val file=File(context.noBackupFilesDir,"driver-session.enc")
+    private val tripFile = File(context.noBackupFilesDir, "driver-active-trip.enc")
     private val prefs=context.getSharedPreferences("driver_install",Context.MODE_PRIVATE)
     val deviceId:String get()=prefs.getString("device",null)?:UUID.randomUUID().toString().also {check(prefs.edit().putString("device",it).commit())}
     private fun key():SecretKey {
@@ -42,7 +43,24 @@ class DriverSessionStore(context:Context) {
             DriverSession(json.getString("token"),json.getString("expiresAt")).takeIf {Instant.parse(it.expiresAt).isAfter(Instant.now())}
         }.getOrNull()
     }
-    fun clear(){AtomicFile(file).delete()}
+    fun clear() {
+        AtomicFile(file).delete()
+        AtomicFile(tripFile).delete()
+    }
+
+    fun saveTrip(session: DriverSession, snapshot: JSONObject?) {
+        if (snapshot == null) AtomicFile(tripFile).delete()
+        else writeEncrypted(tripFile, JSONObject().put("session", sessionFingerprint(session)).put("trip", snapshot))
+    }
+
+    fun savedTrip(session: DriverSession): JSONObject? = runCatching {
+        val cached = readEncrypted(tripFile)
+        cached.getJSONObject("trip").takeIf { cached.getString("session") == sessionFingerprint(session) }
+    }.getOrNull()
+
+    private fun sessionFingerprint(session: DriverSession): String =
+        java.security.MessageDigest.getInstance("SHA-256").digest(session.token.toByteArray())
+            .joinToString("") { "%02x".format(it) }
     private fun actionFile(driverId:String):File {
         val hash=java.security.MessageDigest.getInstance("SHA-256").digest(driverId.toByteArray()).joinToString(""){"%02x".format(it)}
         return File(file.parentFile,"driver-action-$hash.enc")
