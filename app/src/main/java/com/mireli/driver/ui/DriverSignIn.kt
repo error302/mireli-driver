@@ -51,6 +51,7 @@ fun DriverSignInScreen(
     onRetry: () -> Unit,
     resendInSeconds: Long,
     onClose: (() -> Unit)? = null,
+    onRegisterFromSignIn: (() -> Unit)? = null,
     supportAddressFailed: Boolean = false,
     onSupport: () -> Unit = {},
     registering: Boolean = false,
@@ -204,6 +205,11 @@ fun DriverSignInScreen(
                         }
                     }, enabled = !state.loading, modifier = Modifier.testTag("driver_sign_in_promo")) {
                         Text("New driver? Start application", color = MaterialTheme.colorScheme.secondary)
+                    }
+                }
+                if (onRegisterFromSignIn != null) {
+                    TextButton(onClick = onRegisterFromSignIn, enabled = !state.loading) {
+                        Text("Register to drive", color = MaterialTheme.colorScheme.secondary)
                     }
                 }
                 AppearanceToggle(showSettings = true)

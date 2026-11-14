@@ -91,7 +91,7 @@ class StagingServicesTest {
         rule.onNodeWithTag("driver_service_list").performScrollToIndex(0);screenshot("connected-earnings")
         assertNull(sessions.savedAction(driverId))
     }
-    @Test fun nativeDriverCanSignInSaveProfileReadStatementAndSignOut() {
+    @Test fun nativeDriverCanRegisterCompleteOnboardingAndSignOut() {
         assertTrue(BuildConfig.DRIVER_SERVICE_TEST)
         val api=DriverApi();assertTrue(runBlocking {api.request("/status")}.getBoolean("simulation"))
         DriverSessionStore(rule.activity).clear()
@@ -99,21 +99,20 @@ class StagingServicesTest {
         rule.waitUntil(35000){rule.onAllNodesWithTag("driver_welcome_register").fetchSemanticsNodes().isNotEmpty()}
         rule.onNodeWithTag("driver_welcome_register").performScrollTo().performClick()
         rule.waitUntil(20000){rule.onAllNodes(hasText("Email address") and isEnabled()).fetchSemanticsNodes().isNotEmpty()}
-        rule.onNodeWithText("Email address").performTextInput("driver-${System.currentTimeMillis()}@example.com")
+        val email = "driver-${System.currentTimeMillis()}@example.com"
+        rule.onNodeWithText("Email address").performTextInput(email)
         rule.onNodeWithTag("driver_send_code").performScrollTo().assertIsEnabled().performClick()
         rule.waitUntil(30000){rule.onAllNodesWithText("Sample verification code:",substring=true).fetchSemanticsNodes().isNotEmpty()}
         val sampleText=rule.onNodeWithText("Sample verification code:",substring=true).fetchSemanticsNode().config[SemanticsProperties.Text].joinToString(" ")
         val code=Regex("[0-9]{6}").find(sampleText)!!.value
-        rule.onNodeWithText("6-digit verification code").performTextInput("000000")
+        rule.onNodeWithText("6-digit verification code").performTextInput(if (code == "000000") "000001" else "000000")
         closeSoftKeyboard()
         rule.onNodeWithText("Verify and continue").performScrollTo().assertIsEnabled().performClick()
         rule.waitUntil(30000){rule.onAllNodesWithText("The code is invalid or expired.").fetchSemanticsNodes().isNotEmpty()}
         rule.onNodeWithText("6-digit verification code").performScrollTo().performTextReplacement(code)
         closeSoftKeyboard()
         rule.onNodeWithText("Verify and continue").performScrollTo().assertIsEnabled().performClick()
-        rule.waitUntil(30000){rule.onAllNodesWithText("Driver account").fetchSemanticsNodes().isNotEmpty()}
-        awaitAction("Driver & vehicle")
-        rule.onNodeWithText("Driver & vehicle").performClick()
+        rule.waitUntil(30000){rule.onAllNodesWithText("Step 1 of 3").fetchSemanticsNodes().isNotEmpty()}
         awaitAction("Kenyan contact phone")
         reveal("Van")
         rule.onNodeWithText("Van").performClick().assertIsSelected()
@@ -126,9 +125,46 @@ class StagingServicesTest {
         val saved=runBlocking {api.request("/onboarding",token=session!!.token)}
         assertEquals("Sample Native Driver",saved.getJSONObject("profile").getString("fullName"))
         assertEquals("Van",saved.getJSONObject("profile").getString("cabType"))
-        // The native HTTP importer submits the same bytes/headers as the document picker path.
-        val evidence=runBlocking {api.request("/documents/identity","POST",session!!.token,bytes="%PDF-1.4\nSYNTHETIC NATIVE TEST\n%%EOF".toByteArray(),headers=mapOf("Content-Type" to "application/pdf","x-application-version" to saved.getJSONObject("application").getInt("version").toString()))}
-        assertEquals("identity",evidence.getJSONObject("application").getJSONArray("documents").getJSONObject(0).getString("type"))
+        reveal("Continue to documents")
+        rule.onNodeWithText("Continue to documents").assertIsEnabled().performClick()
+        rule.waitUntil(30000) { rule.onAllNodesWithText("Step 2 of 3").fetchSemanticsNodes().isNotEmpty() }
+        reveal("Continue to review")
+        rule.onNodeWithText("Continue to review").assertIsNotEnabled()
+        val evidence = runBlocking {
+            var current = saved
+            val requirements = saved.getJSONArray("requirements")
+            for (index in 0 until requirements.length()) {
+                val required = requirements.getJSONObject(index)
+                if (!required.getBoolean("required")) continue
+                current = api.request("/documents/${required.getString("id")}", "POST", session!!.token,
+                    bytes = "%PDF-1.4\nSYNTHETIC TEST ONLY\n%%EOF".toByteArray(),
+                    headers = mapOf(
+                        "Content-Type" to "application/pdf",
+                        "x-application-version" to current.getJSONObject("application").getInt("version").toString(),
+                        "x-document-expiry" to if (required.getBoolean("expires")) "2099-01-01" else "",
+                    ))
+            }
+            current
+        }
+        assertTrue(evidence.getJSONObject("application").getJSONArray("documents").length() > 0)
+        reveal("Finish later")
+        rule.onNodeWithText("Finish later").performClick()
+        rule.onNodeWithText("Account", useUnmergedTree = true).performClick()
+        rule.onNodeWithContentDescription("Refresh account").performClick()
+        awaitAction("Resume guided application")
+        reveal("Resume guided application")
+        rule.onNodeWithText("Resume guided application").performClick()
+        reveal("Continue to documents")
+        rule.onNodeWithText("Continue to documents").performClick()
+        reveal("Continue to review")
+        rule.onNodeWithText("Continue to review").assertIsEnabled().performClick()
+        rule.waitUntil(30000) { rule.onAllNodesWithText("Step 3 of 3").fetchSemanticsNodes().isNotEmpty() }
+        reveal("I acknowledge this synthetic application and test checklist.")
+        rule.onNodeWithText("I acknowledge this synthetic application and test checklist.").performClick()
+        reveal("Submit for compliance review")
+        rule.onNodeWithText("Submit for compliance review").assertIsEnabled().performClick()
+        rule.waitUntil(30000) { rule.onAllNodesWithText("Application submitted").fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithText("Go to Home").performClick()
         rule.onNodeWithText("Earnings",useUnmergedTree=true).performClick()
         reveal("No settlement records yet.")
         rule.onNodeWithText("No settlement records yet.",substring=true).assertExists()

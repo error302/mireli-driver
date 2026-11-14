@@ -40,6 +40,7 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
     private val sessions=DriverSessionStore(application)
     private var session:DriverSession?=null
     private var driverId:String?=null
+    private var driverEntryIntent = false
     private var workGeneration = 0L
     private var supportRequest:Pair<String,String>?=null
     private val mutable=MutableStateFlow(DriverServiceState())
@@ -152,6 +153,7 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
                 navigationOpen = false, destinationSearchOpen = false, satelliteOpen = false, serviceMessage = null)
             throw error
         }
+        driverEntryIntent = status.optBoolean("driverEntryIntent")
         val contactEmail = status.optString("supportEmail").takeIf { Patterns.EMAIL_ADDRESS.matcher(it).matches() }
         mutable.value = mutable.value.copy(
             emailSignInOpen = status.opt("emailSignInOpen") == true,
@@ -169,7 +171,10 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
         serviceStatus()
         if(mutable.value.emailSignInOpen!=true)throw DriverServiceException(503,"Driver email sign-in is not available yet. Please check again later.")
         if(registering && mutable.value.registrationOpen != true)throw DriverServiceException(503,"New driver applications are paused.")
-        val result=api.request("/auth/email-challenges","POST",json=JSONObject().put("email",email.trim()))
+        if (!driverEntryIntent) throw DriverServiceException(503, "Sign-in update is still rolling out. Try again shortly.")
+        val intent = if (registering) "register" else "sign_in"
+        val result = api.request("/auth/email-challenges", "POST", json = JSONObject()
+            .put("email", email.trim()).put("intent", intent))
         mutable.value=mutable.value.copy(challengeId=result.getString("challengeId"),challengeEmail=email.trim(),resendAt=System.currentTimeMillis()+result.optInt("cooldownSeconds",60).coerceIn(30,300)*1000L,demoCode=if(BuildConfig.DRIVER_SERVICE_TEST)result.optString("demoCode").takeIf {it.isNotBlank()} else null)
     }
     fun verifyCode(code:String)=work {

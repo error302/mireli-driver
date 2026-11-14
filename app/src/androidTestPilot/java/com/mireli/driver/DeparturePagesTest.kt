@@ -8,6 +8,7 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.mireli.driver.ui.DepartureSettlement
 import com.mireli.driver.ui.DriverDocumentRow
+import com.mireli.driver.ui.EarningsOverview
 import com.mireli.driver.ui.DocumentSelectionDialog
 import com.mireli.driver.ui.DriverHomeDashboard
 import com.mireli.driver.ui.MireliTheme
@@ -71,6 +72,31 @@ class DeparturePagesTest {
         rule.onNodeWithText("Remove selected file").performClick()
         rule.onNodeWithText("Review file").assertDoesNotExist()
         assertEquals(false, uploaded)
+    }
+
+    @Test fun earningsSummaryHidesAmountAndOpensRealShortcuts() {
+        val hidden = mutableStateOf(false)
+        var destination = ""
+        rule.setContent {
+            MireliTheme {
+                EarningsOverview(
+                    paid = if (hidden.value) "KSh ••••" else "KSh 2,450",
+                    hidden = hidden.value,
+                    onToggleBalance = { hidden.value = !hidden.value },
+                    onPayoutDetails = { destination = "payout" },
+                    onTripHistory = { destination = "history" },
+                    onPayoutSupport = { destination = "help" },
+                )
+            }
+        }
+        rule.onNodeWithText("KSh 2,450").assertIsDisplayed()
+        rule.onNodeWithContentDescription("Hide balances").performClick()
+        rule.onNodeWithText("KSh 2,450").assertDoesNotExist()
+        rule.onNodeWithText("KSh ••••").assertIsDisplayed()
+        for ((label, target) in listOf("M-Pesa" to "payout", "Trip history" to "history", "Payout help" to "help")) {
+            rule.onNodeWithText(label).performClick()
+            assertEquals(target, destination)
+        }
     }
 
     @Test fun hidingBalancesAlsoHidesExpandedSettlementAmounts() {

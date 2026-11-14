@@ -5,6 +5,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.BackHandler
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.LazyColumn
@@ -53,6 +55,8 @@ private fun policyLink(raw: String): String? = runCatching {
     val starting by vm.startupLoading.collectAsStateWithLifecycle()
     val schedule by vm.trainSchedule.collectAsStateWithLifecycle()
     val profilePhoto by vm.profilePhoto.collectAsStateWithLifecycle()
+    var guidedApplication by rememberSaveable { mutableStateOf(false) }
+    var applicationStep by rememberSaveable { mutableStateOf(0) }
     var entry by rememberSaveable { mutableStateOf(DriverEntry.Welcome) }
     var email by rememberSaveable {mutableStateOf("")};var code by remember {mutableStateOf("")}
     var section by rememberSaveable {mutableIntStateOf(4)};var accepted by rememberSaveable {mutableStateOf(false)}
@@ -85,15 +89,29 @@ private fun policyLink(raw: String): String? = runCatching {
     var selectedType by rememberSaveable {mutableStateOf<String?>(null)};var selectedExpiry by rememberSaveable {mutableStateOf("")}
     var selectedFile by rememberSaveable { mutableStateOf<Uri?>(null) }
     var removeDocumentId by rememberSaveable { mutableStateOf<String?>(null) }
+    var showPayoutDetails by rememberSaveable { mutableStateOf(false) }
+    var supportFromEarnings by rememberSaveable { mutableStateOf(false) }
     var previouslySignedIn by remember {mutableStateOf(false)}
     LaunchedEffect(state.signedIn) {
         if (state.signedIn) {
-            if (entry == DriverEntry.Register) section = 0
+            if (entry == DriverEntry.Register) {
+                guidedApplication = true
+                applicationStep = 0
+                section = 0
+            } else if (entry == DriverEntry.SignIn) {
+                guidedApplication = false
+                section = 4
+            }
             entry = DriverEntry.Welcome
         }
         if(previouslySignedIn && !state.signedIn) {
             email="";code="";supportMessage="";payoutName="";payoutAcknowledged=false
             supportCategory="trip";accepted=false;selectedType=null;selectedExpiry="";selectedFile=null;removeDocumentId=null;tripHistory=false;highlightedTripId=null;section=4
+            guidedApplication = false
+            applicationStep = 0
+            showPayoutDetails = false
+            supportFromEarnings = false
+            payoutPhone = ""
             entry = DriverEntry.Welcome
         }
         previouslySignedIn=state.signedIn
@@ -106,9 +124,9 @@ private fun policyLink(raw: String): String? = runCatching {
     val routeRequest: RouteRequest? = if (state.navigationOpen) vm::navigationRoute else null
     val listState=rememberLazyListState();val focus=LocalFocusManager.current;val keyboard=LocalSoftwareKeyboardController.current
     var lastListSection by rememberSaveable { mutableIntStateOf(-2) }
-    LaunchedEffect(state.signedIn, section) {
+    LaunchedEffect(state.signedIn, section, guidedApplication, applicationStep) {
         val visibleSection = if (state.signedIn) section else -1
-        if (lastListSection != visibleSection) {
+        if (lastListSection != visibleSection || guidedApplication) {
             lastListSection = visibleSection
             focus.clearFocus()
             keyboard?.hide()
@@ -163,6 +181,9 @@ private fun policyLink(raw: String): String? = runCatching {
             resendInSeconds = ((state.resendAt - clock + 999) / 1000).coerceAtLeast(0),
             registering = entry == DriverEntry.Register,
             onBackToWelcome = backToWelcome,
+            onRegisterFromSignIn = if (entry == DriverEntry.SignIn && state.error != null && state.registrationOpen == true) {
+                { vm.changeEmail(); code = ""; entry = DriverEntry.Register }
+            } else null,
             supportAddressFailed = showSupportAddress,
             onSupport = {
                 val emailIntent = Intent(Intent.ACTION_SENDTO, Uri.fromParts("mailto", state.supportEmail, null))
@@ -202,6 +223,20 @@ private fun policyLink(raw: String): String? = runCatching {
             },
             dismissButton = { TextButton(onClick = dismiss) { Text("Cancel") } },
         )
+    }
+    val applicationStatus = app?.optString("status")
+    val editingApplication = applicationStatus in listOf("draft", "changes_requested")
+    val leaveApplication = {
+        guidedApplication = false
+        applicationStep = 0
+        accepted = false
+        section = 4
+    }
+    BackHandler(enabled = guidedApplication) {
+        if (!state.loading) {
+            if (editingApplication && applicationStep > 0) applicationStep--
+            else leaveApplication()
+        }
     }
     var navTarget by remember{mutableStateOf<NavTarget?>(null)}
     // Background trip tracking follows the active trip no matter which section is open: it starts
@@ -257,7 +292,7 @@ private fun policyLink(raw: String): String? = runCatching {
                         }
                     }
                 }
-                NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) {
+                if (!guidedApplication) NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) {
                     listOf(
                         4 to ("Home" to MireliIcons.Home),
                         3 to ("Trips" to MireliIcons.CarFront),
@@ -285,7 +320,14 @@ private fun policyLink(raw: String): String? = runCatching {
     ) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding).imePadding().testTag("driver_service_list"),state=listState,contentPadding=PaddingValues(horizontal=MireliDesign.Space.md,vertical=MireliDesign.Space.md),verticalArrangement=Arrangement.spacedBy(MireliDesign.Space.md)) {
             if(section==4)item { DriverHomeTopBar(onOpenMap = { navTarget = NavTarget(null, null) }, onSupport = { section=2 }) }
-            if(section==0)item {
+            if (guidedApplication) item {
+                DeparturePageTitle("Driver application",
+                    if (editingApplication) "Step ${applicationStep + 1} of 3" else null)
+                if (app == null && !state.loading) {
+                    TextButton(onClick = vm::refresh) { Text("Reload application") }
+                }
+            }
+            if(section==0 && !guidedApplication)item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.weight(1f)) { DeparturePageTitle("Driver account") }
                     IconButton(onClick = { vm.refresh(); vm.loadProfilePhoto() }, enabled = !state.loading) {
@@ -293,18 +335,7 @@ private fun policyLink(raw: String): String? = runCatching {
                     }
                 }
             }
-            if(section==1)item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.weight(1f)) { DeparturePageTitle("Earnings") }
-                    IconButton(onClick = {
-                        hideBalance = !hideBalance
-                        earningsPrefs.edit().putBoolean("hideBalance", hideBalance).apply()
-                    }) {
-                        Icon(if (hideBalance) MireliIcons.Visibility else MireliIcons.VisibilityOff,
-                            if (hideBalance) "Show balances" else "Hide balances", tint = MaterialTheme.colorScheme.secondary)
-                    }
-                }
-            }
+            if (section == 1) item { DeparturePageTitle("Earnings") }
             if(section==3)item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.weight(1f)) { DeparturePageTitle("Your transfers", "Departure times in East Africa Time (EAT)") }
@@ -315,7 +346,10 @@ private fun policyLink(raw: String): String? = runCatching {
             }
             if(section==2)item {
                 DeparturePageTitle("Driver support", "For emergencies, contact local emergency services directly.")
-                TextButton(onClick = { section=0 }) { Text("Back to account") }
+                TextButton(onClick = {
+                    section = if (supportFromEarnings) 1 else 0
+                    supportFromEarnings = false
+                }) { Text(if (supportFromEarnings) "Back to earnings" else "Back to account") }
             }
             if(onClose!=null)item {TextButton(onClick=onClose){Text("Back to preview")}}
             if(BuildConfig.DRIVER_SERVICE_TEST)item {Card {Text("STAGING · Simulated sign-in and payouts",Modifier.padding(16.dp))}}
@@ -369,60 +403,98 @@ private fun policyLink(raw: String): String? = runCatching {
                         val evidence = documents[it.getString("id")]
                         evidence?.optString("state") in setOf("pending_review", "approved")
                     }
-                    item {
+                    if (!guidedApplication) item {
                         MireliDriverCard(profile, applicationStatus, verified,
                             state.eligibility?.optBoolean("eligible") == true, profilePhoto, !state.loading,
                             onPickPhoto = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                             onRemovePhoto = vm::removeProfilePhoto)
                         renewalNote(state.eligibility)?.let { DepartureNote(it) }
                         (app.opt("reviewReason") as? String)?.takeIf { it.isNotBlank() }?.let { DepartureNote(it) }
+                        if (editingApplication) TextButton(onClick = {
+                            applicationStep = 0
+                            guidedApplication = true
+                        }, enabled = !state.loading) { Text("Resume guided application") }
                     }
-                    item {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            DepartureSection("Verification checklist")
-                            if (required.isNotEmpty()) {
-                                Text("$onFile of ${required.size} required documents on file",
-                                    style = MaterialTheme.typography.labelLarge)
-                                LinearProgressIndicator(progress = { onFile.toFloat() / required.size },
-                                    modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    val profileReady = profile.optString("fullName").let { it != "New applicant" && it.trim().length >= 3 } &&
+                        profile.optString("plate").isNotBlank() && (profile.opt("phone") as? String).orEmpty().isNotBlank() &&
+                        app.optString("licenceClass").isNotBlank() && profile.optString("cabType").isNotBlank()
+                    val reviewReady = profileReady && required.all { requirement ->
+                        val evidence = documents[requirement.getString("id")]
+                        evidence?.optString("state") in setOf("pending_review", "approved") &&
+                            (!requirement.getBoolean("expires") || OnboardingPolicy.isCurrentDocumentDate(
+                                (evidence?.opt("expiresAt") as? String)?.take(10).orEmpty()))
+                    }
+                    if (guidedApplication && !editingApplication) item {
+                        val status = when (applicationStatus) {
+                            "submitted" -> "Application submitted"
+                            "approved" -> "Application approved"
+                            else -> applicationStatus.readableStatus()
+                        }
+                        Text(status, style = MaterialTheme.typography.headlineMedium)
+                        if (applicationStatus == "submitted") DepartureNote("Mireli will review your documents. Track your status in Account.")
+                        DepartureButton(onClick = leaveApplication, modifier = Modifier.fillMaxWidth()) { Text("Go to Home") }
+                    }
+                    if (guidedApplication && editingApplication && applicationStep == 0) item {
+                        DepartureSection("Driver & vehicle")
+                        (app.opt("reviewReason") as? String)?.takeIf { it.isNotBlank() }?.let { DepartureNote(it) }
+                        ServerProfile(onboarding, state.loading, vm::profile)
+                        DepartureButton(onClick = { applicationStep = 1 }, enabled = profileReady && !state.loading,
+                            modifier = Modifier.fillMaxWidth()) { Text("Continue to documents") }
+                    }
+                    if (!guidedApplication || (editingApplication && applicationStep == 1)) {
+                        item {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                DepartureSection("Verification checklist")
+                                if (required.isNotEmpty()) {
+                                    Text("$onFile of ${required.size} required documents on file",
+                                        style = MaterialTheme.typography.labelLarge)
+                                    LinearProgressIndicator(progress = { onFile.toFloat() / required.size },
+                                        modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                DepartureNote("PDF, JPG or PNG · up to ${documentLimit / (1024 * 1024)} MB. Use a clear copy.")
                             }
-                            DepartureNote("PDF, JPG or PNG · up to ${documentLimit / (1024 * 1024)} MB. Use a clear copy.")
                         }
-                    }
-                    val sections = requirements.groupBy(::documentSection)
-                    for (group in listOf("Driver credentials", "Vehicle documents", "Optional documents")) {
-                        val rows = sections[group] ?: continue
-                        item(key = group) {
-                            Text(group, style = MaterialTheme.typography.titleLarge,
-                                modifier = Modifier.padding(top = MireliDesign.Space.xs))
-                        }
-                        itemsIndexed(rows, key = { _, requirement -> requirement.getString("id") }) { index, requirement ->
-                            val id = requirement.getString("id")
-                            DriverDocumentRow(requirement, documents[id], graceUntil, canEdit, state.documentUpload?.takeIf { it.type == id },
-                                Modifier.staggerIn(index.coerceAtMost(5)), showRequirement = false,
-                                onRemove = documents[id]?.takeIf {
-                                    onboarding.optBoolean("canRemovePendingDocument") && !state.loading &&
-                                        applicationStatus in listOf("draft", "changes_requested", "submitted", "approved") &&
-                                        it.optString("state") == "pending_review"
-                                }?.getString("id")?.let { documentId -> { removeDocumentId = documentId } },
-                            ) { expiry ->
-                                selectedType = id
-                                selectedExpiry = expiry
-                                picker.launch(arrayOf("application/pdf", "image/jpeg", "image/png"))
+                        val sections = requirements.groupBy(::documentSection)
+                        for (group in listOf("Driver credentials", "Vehicle documents", "Optional documents")) {
+                            val rows = sections[group] ?: continue
+                            item(key = group) {
+                                Text(group, style = MaterialTheme.typography.titleLarge,
+                                    modifier = Modifier.padding(top = MireliDesign.Space.xs))
+                            }
+                            itemsIndexed(rows, key = { _, requirement -> requirement.getString("id") }) { index, requirement ->
+                                val id = requirement.getString("id")
+                                DriverDocumentRow(requirement, documents[id], graceUntil, canEdit, state.documentUpload?.takeIf { it.type == id },
+                                    Modifier.staggerIn(index.coerceAtMost(5)), showRequirement = false,
+                                    onRemove = documents[id]?.takeIf {
+                                        onboarding.optBoolean("canRemovePendingDocument") && !state.loading &&
+                                            applicationStatus in listOf("draft", "changes_requested", "submitted", "approved") &&
+                                            it.optString("state") == "pending_review"
+                                    }?.getString("id")?.let { documentId -> { removeDocumentId = documentId } },
+                                ) { expiry ->
+                                    selectedType = id
+                                    selectedExpiry = expiry
+                                    picker.launch(arrayOf("application/pdf", "image/jpeg", "image/png"))
+                                }
                             }
                         }
+                        if (guidedApplication) item {
+                            DepartureButton(onClick = { applicationStep = 2 }, enabled = reviewReady && !state.loading,
+                                modifier = Modifier.fillMaxWidth()) { Text("Continue to review") }
+                        }
                     }
-                    item {
+                    if (!guidedApplication) item {
                         HorizontalDivider()
-                        val profileMissing = profile.optString("fullName") == "New applicant" ||
-                            profile.optString("plate").isBlank() || (profile.opt("phone") as? String).isNullOrBlank() ||
-                            app.optString("licenceClass").isBlank() || profile.optString("cabType").isBlank()
-                        DepartureDisclosure("Driver & vehicle", if (profileMissing) "Complete your profile before submitting" else null) {
+                        DepartureDisclosure("Driver & vehicle", if (!profileReady) "Complete your profile before submitting" else null) {
                             ServerProfile(onboarding, state.loading, vm::profile)
                         }
                     }
-                    item {Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                    if (!guidedApplication || (editingApplication && applicationStep == 2)) item {
+                      Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
                         DepartureSection("Submit for review")
+                        if (guidedApplication) {
+                            DepartureNote("${profile.optString("fullName")} · ${profile.optString("plate")}")
+                            DepartureNote("$onFile of ${required.size} required documents on file")
+                        }
                         listOf("Driver terms" to termsLink, "Privacy notice" to privacyLink).forEach { (label, url) ->
                             if (url != null) TextButton(onClick={policyLinkError = runCatching { uriHandler.openUri(url) }.isFailure},
                                 colors=ButtonDefaults.textButtonColors(contentColor=MaterialTheme.colorScheme.secondary)) {Text(label)}
@@ -434,61 +506,45 @@ private fun policyLink(raw: String): String? = runCatching {
                             Checkbox(accepted,null,enabled=canEdit&&policiesAvailable)
                             Text(if(BuildConfig.DRIVER_SERVICE_TEST)"I acknowledge this synthetic application and test checklist." else "I have read the current driver terms and privacy notice.")
                         }
-                        DepartureButton(onClick={vm.submit(accepted)},enabled=canEdit&&policiesAvailable&&accepted&&applicationStatus in listOf("draft","changes_requested"),modifier=Modifier.fillMaxWidth()){Text("Submit for compliance review")}
+                        DepartureButton(onClick={vm.submit(accepted)},enabled=canEdit&&policiesAvailable&&accepted&&applicationStatus in listOf("draft","changes_requested")&&(!guidedApplication || reviewReady),modifier=Modifier.fillMaxWidth()){Text("Submit for compliance review")}
                     }}
                 }else if(section==1) {
                     fun shown(minor:Long):String=if(hideBalance)"KSh ••••" else money(minor)
                     state.earnings?.let{statement->
                         val totals = statement.getJSONArray("totals").objects()
                         val lines = statement.getJSONArray("lines").objects()
-                        item { DriverOverviewSurface {
-                            val paid = totals.filter { it.getString("status") == "completed" }.sumOf { it.getLong("netMinor") }
-                            DepartureAmount("Paid earnings", shown(paid))
-                            totals.filterNot { it.getString("status") == "completed" }.forEach {
-                                DepartureValueRow(it.getString("status").settlementLabel(), shown(it.getLong("netMinor")))
+                        val paid = totals.filter { it.getString("status") == "completed" }.sumOf { it.getLong("netMinor") }
+                        item {
+                            EarningsOverview(
+                                paid = shown(paid), hidden = hideBalance,
+                                onToggleBalance = {
+                                    hideBalance = !hideBalance
+                                    earningsPrefs.edit().putBoolean("hideBalance", hideBalance).apply()
+                                },
+                                onPayoutDetails = { showPayoutDetails = true },
+                                onTripHistory = { tripHistory = true; section = 3 },
+                                onPayoutSupport = {
+                                    supportCategory = "payout"
+                                    supportFromEarnings = true
+                                    section = 2
+                                },
+                            )
+                        }
+                        val pendingTotals = totals.filterNot { it.getString("status") == "completed" }
+                        if (pendingTotals.isNotEmpty()) item {
+                            Column(verticalArrangement = Arrangement.spacedBy(MireliDesign.Space.xs)) {
+                                DepartureSection("Other earnings")
+                                pendingTotals.forEach {
+                                    DepartureValueRow(it.getString("status").settlementLabel(), shown(it.getLong("netMinor")))
+                                }
                             }
-                        } }
+                        }
                         item { DepartureSection("Settlements") }
                         if (lines.isEmpty()) item {
                             DepartureNote("No settlement records yet.")
-                            TextButton(onClick = { tripHistory = true; section = 3 }) { Text("View trip history") }
                         }
                         itemsIndexed(lines, key = { _, line -> line.getString("id") }) { index, line ->
                             DepartureSettlement(line, hideBalance, Modifier.staggerIn(index.coerceAtMost(5)))
-                        }
-                        val destination=statement.getJSONObject("destination")
-                        item {
-                            val status = destination.getString("status")
-                            val masked = (statement.opt("destinationMasked") as? String)?.takeIf { it.isNotBlank() }
-                            Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                                DepartureSection("M-Pesa payouts")
-                                DepartureValueRow("Payout number", masked ?: "Not set")
-                                DepartureValueRow("Beneficiary", status.readableStatus())
-                                (destination.opt("reviewNote") as? String)?.takeIf { it.isNotBlank() }?.let { DepartureNote(it) }
-                                if (status in listOf("not_configured", "rejected")) {
-                                    DepartureDisclosure("Set up payout details") {
-                                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            DepartureNote("Finance checks your account name and identity evidence before approving your M-Pesa number.")
-                                            TextField(payoutName, { payoutName = it.take(100) }, Modifier.fillMaxWidth(),
-                                                label = { Text("Name on your M-Pesa account") }, singleLine = true,
-                                                enabled = !state.loading, colors = departureFieldColors())
-                                            TextField(payoutPhone, { payoutPhone = it.take(20) }, Modifier.fillMaxWidth(),
-                                                label = { Text("M-Pesa number (07XX… or 2547XX…)") },
-                                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                                                singleLine = true, enabled = !state.loading, colors = departureFieldColors())
-                                            Row(Modifier.fillMaxWidth().toggleable(payoutAcknowledged, enabled = !state.loading,
-                                                role = Role.Checkbox, onValueChange = { payoutAcknowledged = it }),
-                                                verticalAlignment = Alignment.CenterVertically) {
-                                                Checkbox(payoutAcknowledged, null)
-                                                Text("This M-Pesa number and account name are mine.")
-                                            }
-                                            DepartureButton(onClick = { vm.payoutDestination(payoutName, payoutPhone) },
-                                                enabled = !state.loading && payoutAcknowledged && payoutName.trim().length >= 3,
-                                                modifier = Modifier.fillMaxWidth()) { Text("Request beneficiary review") }
-                                        }
-                                    }
-                                }
-                            }
                         }
                     }
                     if (state.earnings == null) item {
@@ -548,14 +604,20 @@ private fun policyLink(raw: String): String? = runCatching {
                         case.optString("reply").takeIf{it.isNotBlank()&&it!="null"}?.let{Text("Mireli: $it")}
                     }}
                 }
-                if(section==0)item {
+                if (guidedApplication && editingApplication) item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(MireliDesign.Space.xs)) {
+                        if (applicationStep > 0) TextButton(onClick = { applicationStep-- }, enabled = !state.loading) { Text("Back") }
+                        TextButton(onClick = leaveApplication, enabled = !state.loading) { Text("Finish later") }
+                    }
+                }
+                if(section==0 && !guidedApplication)item {
                     Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
                         DepartureSection("Settings and support")
                         DriverActionTile("Driver support","Trips, documents and payout cases",MireliIcons.HeadsetMic) { section=2 }
                         AppearanceToggle(showSettings=true)
                     }
                 }
-                if(section==0)item {
+                if(section==0 && !guidedApplication)item {
                     Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
                         DepartureSection("Privacy and account deletion")
                         if (onboarding != null) DriverPrivacyNotice(onboarding, state.supportEmail)
@@ -566,11 +628,55 @@ private fun policyLink(raw: String): String? = runCatching {
                         }
                     }
                 }
-                if(section==0)item {
+                if(section==0 && !guidedApplication)item {
                     TextButton(onClick={com.mireli.driver.service.TripTracking.stop(trackingContext);vm.signOut()},
                         enabled=!state.loading,colors=ButtonDefaults.textButtonColors(contentColor=MaterialTheme.colorScheme.error)) { Text("Sign out") }
                 }
         }
+    }
+    val payoutStatement = state.earnings
+    if (section == 1 && showPayoutDetails && payoutStatement != null) {
+        val destination = payoutStatement.getJSONObject("destination")
+        val status = destination.getString("status")
+        val masked = (payoutStatement.opt("destinationMasked") as? String)?.takeIf { it.isNotBlank() }
+        AlertDialog(
+            onDismissRequest = { showPayoutDetails = false },
+            title = { Text("M-Pesa payouts") },
+            text = {
+                Column(
+                    Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(MireliDesign.Space.xs),
+                ) {
+                    DepartureValueRow("Payout number", masked ?: "Not set")
+                    DepartureValueRow("Beneficiary", status.readableStatus())
+                    (destination.opt("reviewNote") as? String)?.takeIf { it.isNotBlank() }?.let { DepartureNote(it) }
+                    state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                    if (status in listOf("not_configured", "rejected")) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            DepartureNote("Finance checks your account name and identity evidence before approving your M-Pesa number.")
+                            TextField(payoutName, { payoutName = it.take(100) }, Modifier.fillMaxWidth(),
+                                label = { Text("Name on your M-Pesa account") }, singleLine = true,
+                                enabled = !state.loading, colors = departureFieldColors())
+                            TextField(payoutPhone, { payoutPhone = it.take(20) }, Modifier.fillMaxWidth(),
+                                label = { Text("M-Pesa number (07XX… or 2547XX…)") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                                singleLine = true, enabled = !state.loading, colors = departureFieldColors())
+                            Row(Modifier.fillMaxWidth().toggleable(payoutAcknowledged, enabled = !state.loading,
+                                role = Role.Checkbox, onValueChange = { payoutAcknowledged = it }),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(payoutAcknowledged, null)
+                                Text("This M-Pesa number and account name are mine.")
+                            }
+                            DepartureButton(onClick = { vm.payoutDestination(payoutName, payoutPhone) },
+                                enabled = !state.loading && payoutAcknowledged && payoutName.trim().length >= 3,
+                                modifier = Modifier.fillMaxWidth()) { Text("Request beneficiary review") }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showPayoutDetails = false }) { Text("Done") } },
+        )
     }
     navTarget?.let{ target->
         DriverNavigationScreen(
