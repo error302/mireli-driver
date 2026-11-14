@@ -32,6 +32,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.location.LocationManagerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -113,11 +114,15 @@ internal fun rememberDriverPosition(enabled: Boolean = true): DriverPosition {
                 @Deprecated("Deprecated by Android") override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) = Unit
                 override fun onProviderEnabled(provider: String) { error = null }
                 override fun onProviderDisabled(provider: String) {
-                    if (fix == null) error = "Turn on device location to see your position."
+                    if (!LocationManagerCompat.isLocationEnabled(manager)) {
+                        fix = null
+                        error = "Turn on device location to see your position."
+                    }
                 }
             }
             fun start() {
                 if (listening) return
+                if (!LocationManagerCompat.isLocationEnabled(manager)) fix = null
                 listening = true
                 try {
                     val providers = if (context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED)
@@ -127,7 +132,10 @@ internal fun rememberDriverPosition(enabled: Boolean = true): DriverPosition {
                         manager.getLastKnownLocation(provider)?.let { listener.onLocationChanged(it) }
                         manager.requestLocationUpdates(provider, 3_000L, 0f, listener, Looper.getMainLooper())
                     }
-                    if (fix == null) error = "Waiting for a location fix…"
+                    if (fix == null) {
+                        error = if (LocationManagerCompat.isLocationEnabled(manager)) "Waiting for a location fix…"
+                        else "Turn on device location to see your position."
+                    }
                 } catch (_: SecurityException) {
                     error = "Location permission is needed to show your position."
                 }

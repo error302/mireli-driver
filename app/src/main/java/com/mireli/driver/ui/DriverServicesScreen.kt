@@ -385,7 +385,8 @@ private fun policyLink(raw: String): String? = runCatching {
                             onOpenAccount = { section=0 },
                             onOpenTrip = { id -> highlightedTripId=id; tripHistory=false; section=3 },
                             onStartNavigation = { tripId, stop -> navTarget=NavTarget(tripId,stop) },
-                            onOpenMap = { navTarget=NavTarget(null,null) },
+                            onOpenMap = { navTarget = NavTarget(null, null) },
+                            showLocationPreview = navTarget == null,
                             renewalNote = renewalNote(state.eligibility),
                             schedule = schedule,
                             onRefreshTimetable = vm::refreshTimetable

@@ -126,8 +126,8 @@ class StagingServicesTest {
         val saved=runBlocking {api.request("/onboarding",token=session!!.token)}
         assertEquals("Sample Native Driver",saved.getJSONObject("profile").getString("fullName"))
         assertEquals("Van",saved.getJSONObject("profile").getString("cabType"))
-        reveal("Continue to documents")
-        rule.onNodeWithText("Continue to documents").assertIsEnabled().performClick()
+        awaitAction("Continue to documents")
+        rule.onNodeWithText("Continue to documents").performClick()
         rule.waitUntil(30000) { rule.onAllNodesWithText("Step 2 of 3").fetchSemanticsNodes().isNotEmpty() }
         reveal("Continue to review")
         rule.onNodeWithText("Continue to review").assertIsNotEnabled()
@@ -176,6 +176,8 @@ class StagingServicesTest {
         rule.waitUntil(30000) { rule.onAllNodesWithText("Application submitted").fetchSemanticsNodes().isNotEmpty() }
         rule.onNodeWithText("Go to Home").performClick()
         reveal("Mombasa Terminus")
+        reveal("Open map")
+        rule.onNodeWithText("Open map").assertExists()
         rule.onNodeWithTag("driver_service_list").performScrollToIndex(0)
         if (captureDesign) screenshot("compact-home")
         rule.onNodeWithText("Earnings",useUnmergedTree=true).performClick()

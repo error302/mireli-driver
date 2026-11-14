@@ -28,7 +28,9 @@ class DeparturePagesTest {
                 onOpenAccount = {}, onOpenTrip = {}, onStartNavigation = { _, _ -> }, onOpenMap = { opened = true })
         } } }
         rule.onNodeWithText("Continue onboarding").assertIsDisplayed()
-        rule.onNodeWithText("Live map").performClick()
+        rule.onNodeWithTag("home_location_preview").assertIsDisplayed()
+        rule.onNodeWithText("Your location").assertIsDisplayed()
+        rule.onNodeWithText("Open map").performClick()
         assertEquals(true, opened)
     }
 

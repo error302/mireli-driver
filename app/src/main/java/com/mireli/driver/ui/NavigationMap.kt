@@ -10,6 +10,7 @@ import android.graphics.drawable.BitmapDrawable
 import android.location.Location
 import android.os.Bundle
 import android.util.Log
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -62,6 +64,7 @@ import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.maps.MapLibreMap
+import org.maplibre.android.maps.MapLibreMapOptions
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
 import org.maplibre.android.module.http.HttpRequestUtil
@@ -83,6 +86,7 @@ import org.maplibre.geojson.Polygon
 import kotlin.math.cos
 
 private const val TAG = "MireliMap"
+private val MombasaMapCentre = LatLng(-4.0435, 39.6682)
 
 private const val CAR_ICON_ID = "mireli-car-icon"
 private const val CAR_SHADOW_ICON_ID = "mireli-car-shadow"
@@ -176,8 +180,7 @@ internal fun NavigationMap(
     interactive: Boolean = true,
     follow: Boolean = false,
     controls: Boolean = true,
-    /** False draws the car pointing up: a north-up preview would otherwise show it sideways. */
-    rotateVehicle: Boolean = true,
+    homePreview: Boolean = false,
     satelliteToken: String? = null,
     onLongPress: ((GeoPoint) -> Unit)? = null,
     controlsBottomInset: Dp = MireliDesign.Space.xs,
@@ -188,7 +191,7 @@ internal fun NavigationMap(
     val dark = MaterialTheme.colorScheme.background.luminanceIsDark()
     val prefs = remember { context.getSharedPreferences("map", android.content.Context.MODE_PRIVATE) }
     var layerChoice by remember { mutableStateOf(MapLayer.read(prefs)) }
-    val activeLayer = if (layerChoice == MapLayer.Satellite && satelliteToken == null) MapLayer.Auto else layerChoice
+    val activeLayer = if (homePreview || (layerChoice == MapLayer.Satellite && satelliteToken == null)) MapLayer.Auto else layerChoice
     val styleUrl = mapLayerUrl(activeLayer, dark)
     var layersOpen by remember { mutableStateOf(false) }
     var retryStyle by remember { mutableIntStateOf(0) }
@@ -222,7 +225,12 @@ internal fun NavigationMap(
         MapLibre.getInstance(context.applicationContext)
         HttpRequestUtil.setOkHttpClient(DriverMapHttp.client)
         HttpRequestUtil.setPrintRequestUrlOnFailure(false)
-        MapView(context)
+        if (homePreview) {
+            // TextureView follows the rounded clip and scrolls with the Compose dashboard.
+            MapView(context, MapLibreMapOptions.createFromAttributes(context).textureMode(true))
+        } else {
+            MapView(context)
+        }
     }
 
     DisposableEffect(mapView, owner) {
@@ -249,7 +257,7 @@ internal fun NavigationMap(
         mapView.addOnDidFailLoadingMapListener { reason -> failed = true; Log.e(TAG, "map failed: $reason") }
         mapView.getMapAsync { ready ->
             map = ready
-            ready.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(-4.0435, 39.6682), 12.0))
+            ready.moveCamera(CameraUpdateFactory.newLatLngZoom(MombasaMapCentre, 12.0))
             // The SDK wordmark sits on top of the card artwork; attribution stays on instead.
             ready.uiSettings.isLogoEnabled = false
             ready.uiSettings.isAttributionEnabled = true
@@ -336,9 +344,30 @@ internal fun NavigationMap(
         }
     }
 
+    // The dashboard only needs to redraw when a new fix or style arrives.
+    LaunchedEffect(map, style, location, fix) {
+        if (!homePreview) return@LaunchedEffect
+        val ready = map ?: return@LaunchedEffect
+        val currentStyle = style ?: return@LaunchedEffect
+        if (location == null) {
+            val empty = FeatureCollection.fromFeatures(emptyList<Feature>())
+            currentStyle.getSourceAs<GeoJsonSource>(ACCURACY_SOURCE_ID)?.setGeoJson(empty)
+            ready.moveCamera(CameraUpdateFactory.newLatLngZoom(MombasaMapCentre, 12.0))
+        } else {
+            val accuracy = fix?.takeIf { it.hasAccuracy() }?.accuracy
+            drawAccuracy(currentStyle, location, accuracy)
+            val targetZoom = when {
+                accuracy == null || accuracy <= 150f -> 16.4
+                accuracy <= 400f -> 15.0
+                else -> 13.0
+            }
+            ready.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(location.latitude, location.longitude), targetZoom))
+        }
+    }
+
     // One loop for vehicle motion, rotation, accuracy and the follow camera.
     LaunchedEffect(map, loaded, styleVersion) {
-        if (!loaded) return@LaunchedEffect
+        if (homePreview || !loaded) return@LaunchedEffect
         val ready = map ?: return@LaunchedEffect
         var shown: GeoPoint? = null
         var shownBearing = 0.0
@@ -361,7 +390,7 @@ internal fun NavigationMap(
                 shown = goal
                 shownBearing = latestHeading.value
                 lastHeading = shownBearing
-                drawCar(style, goal, if (rotateVehicle) shownBearing else 0.0)
+                drawCar(style, goal, shownBearing)
                 drawAccuracy(style, goal, latestAccuracy.value)
                 if (!cameraReady) {
                     frameRouteOrPoint(ready, latestRoute.value, goal)
@@ -377,7 +406,7 @@ internal fun NavigationMap(
                 val wanted = latestHeading.value
                 shownBearing = (shownBearing + bearingDelta(shownBearing, wanted) * 0.2) % 360.0
                 lastHeading = shownBearing
-                drawCar(style, shown, if (rotateVehicle) shownBearing else 0.0)
+                drawCar(style, shown, shownBearing)
                 drawAccuracy(style, shown, latestAccuracy.value)
             }
             // Rebuilding a 600-point geometry 18 times a second is wasted work; the split only
@@ -413,6 +442,12 @@ internal fun NavigationMap(
 
     Box(modifier) {
         AndroidView(factory = { mapView }, modifier = Modifier.fillMaxSize())
+        if (homePreview && loaded && !failed && location != null) {
+            // The preview camera stays centered on the fix. Draw its vehicle above the texture
+            // so the north-up marker has a consistent size at every accuracy-dependent zoom.
+            Image(painterResource(R.drawable.ic_vehicle_top), contentDescription = "Current position",
+                modifier = Modifier.align(Alignment.Center).size(32.dp))
+        }
         if (!loaded && !failed) CircularProgressIndicator(Modifier.align(Alignment.Center))
         if (failed) {
             Surface(

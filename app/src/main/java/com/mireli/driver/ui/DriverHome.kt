@@ -432,6 +432,7 @@ internal fun DriverHomeDashboard(
     onOpenTrip: (String) -> Unit,
     onStartNavigation: (String, NavigationStop) -> Unit,
     onOpenMap: () -> Unit,
+    showLocationPreview: Boolean = true,
     renewalNote: String? = null,
     schedule: TrainSchedule = TrainSchedule(),
     onRefreshTimetable: () -> Unit = {}
@@ -445,8 +446,8 @@ internal fun DriverHomeDashboard(
         val now = rememberNow(15_000L)
         if (!eligible) {
             if (renewalNote == null) ApplicationPanel(applicationStatus, onOpenAccount, onRefresh)
+            if (showLocationPreview) HomeLocationPreview(onOpenMap)
             SgrTodayPanel(now, schedule, onRefreshTimetable)
-            HomeMapRow(onOpenMap)
             return@Column
         }
 
@@ -456,6 +457,11 @@ internal fun DriverHomeDashboard(
         }
         if (nextTrip != null) {
             NextTransferCard(nextTrip, now, nextTrip.primaryNavigationStop(), onStartNavigation, onOpenTrip)
+        } else if (tripsCurrent) {
+            Text("No assignments", style = MaterialTheme.typography.headlineSmall)
+        }
+        if (showLocationPreview) HomeLocationPreview(onOpenMap)
+        if (nextTrip != null) {
             val localDate = now.atZone(NairobiZone).toLocalDate()
             val later = currentTrips.filter { trip ->
                 trip.isActiveTransfer() && trip.optString("id") != nextTrip.optString("id") &&
@@ -483,24 +489,8 @@ internal fun DriverHomeDashboard(
                     onOpenTrip = onOpenTrip
                 )
             }
-        } else if (tripsCurrent) {
-            Text("No assignments", style = MaterialTheme.typography.headlineSmall)
         }
         SgrTodayPanel(now, schedule, onRefreshTimetable)
-        HomeMapRow(onOpenMap)
-    }
-}
-
-@Composable
-private fun HomeMapRow(onOpenMap: () -> Unit) {
-    val colors = MaterialTheme.colorScheme
-    Surface(onClick = onOpenMap, shape = MaterialTheme.shapes.small, color = colors.surfaceContainerLow) {
-        Row(Modifier.fillMaxWidth().heightIn(min = MireliDesign.TouchTarget).padding(horizontal = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(MireliIcons.Map, null, Modifier.size(20.dp), tint = colors.secondary)
-            Text("Live map", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
-            Icon(MireliIcons.ChevronRight, null, Modifier.size(18.dp), tint = colors.secondary)
-        }
     }
 }
 
