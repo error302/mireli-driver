@@ -52,7 +52,7 @@ internal val MireliTypography = Typography(
 )
 
 internal val Typography.transferClock: TextStyle
-    get() = displayMedium
+    get() = mireliType(30, 36, FontWeight.SemiBold, -1.0, tabular = true)
 
 internal val Typography.drivingMetric: TextStyle
     get() = titleLarge.copy(fontFeatureSettings = MireliDesign.NumberFeatures)
@@ -62,3 +62,9 @@ internal val Typography.timetableClock: TextStyle
 
 internal val Typography.numericDetail: TextStyle
     get() = bodyMedium.copy(fontFeatureSettings = MireliDesign.NumberFeatures)
+
+internal val Typography.pageTitle: TextStyle
+    get() = mireliType(24, 29, FontWeight.Bold, -0.55)
+
+internal val Typography.earningsAmount: TextStyle
+    get() = mireliType(26, 32, FontWeight.SemiBold, -0.8, tabular = true)

@@ -55,6 +55,7 @@ private fun policyLink(raw: String): String? = runCatching {
     val starting by vm.startupLoading.collectAsStateWithLifecycle()
     val schedule by vm.trainSchedule.collectAsStateWithLifecycle()
     val profilePhoto by vm.profilePhoto.collectAsStateWithLifecycle()
+    var expandedDocumentGroup by rememberSaveable { mutableStateOf<String?>(null) }
     var guidedApplication by rememberSaveable { mutableStateOf(false) }
     var applicationStep by rememberSaveable { mutableStateOf(0) }
     var entry by rememberSaveable { mutableStateOf(DriverEntry.Welcome) }
@@ -109,6 +110,7 @@ private fun policyLink(raw: String): String? = runCatching {
             supportCategory="trip";accepted=false;selectedType=null;selectedExpiry="";selectedFile=null;removeDocumentId=null;tripHistory=false;highlightedTripId=null;section=4
             guidedApplication = false
             applicationStep = 0
+            expandedDocumentGroup = null
             showPayoutDetails = false
             supportFromEarnings = false
             payoutPhone = ""
@@ -318,8 +320,8 @@ private fun policyLink(raw: String): String? = runCatching {
             }
         },
     ) { padding ->
-        LazyColumn(Modifier.fillMaxSize().padding(padding).imePadding().testTag("driver_service_list"),state=listState,contentPadding=PaddingValues(horizontal=MireliDesign.Space.md,vertical=MireliDesign.Space.md),verticalArrangement=Arrangement.spacedBy(MireliDesign.Space.md)) {
-            if(section==4)item { DriverHomeTopBar(onOpenMap = { navTarget = NavTarget(null, null) }, onSupport = { section=2 }) }
+        LazyColumn(Modifier.fillMaxSize().padding(padding).imePadding().testTag("driver_service_list"),state=listState,contentPadding=PaddingValues(horizontal=MireliDesign.Space.md,vertical=MireliDesign.Space.md),verticalArrangement=Arrangement.spacedBy(if (guidedApplication) MireliDesign.Space.md else MireliDesign.Space.sm)) {
+            if(section==4)item { DriverHomeTopBar(onSupport = { section = 2 }) }
             if (guidedApplication) item {
                 DeparturePageTitle("Driver application",
                     if (editingApplication) "Step ${applicationStep + 1} of 3" else null)
@@ -329,7 +331,7 @@ private fun policyLink(raw: String): String? = runCatching {
             }
             if(section==0 && !guidedApplication)item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.weight(1f)) { DeparturePageTitle("Driver account") }
+                    Box(Modifier.weight(1f)) { DeparturePageTitle("Account") }
                     IconButton(onClick = { vm.refresh(); vm.loadProfilePhoto() }, enabled = !state.loading) {
                         Icon(MireliIcons.Refresh, "Refresh account", tint = MaterialTheme.colorScheme.secondary)
                     }
@@ -338,7 +340,7 @@ private fun policyLink(raw: String): String? = runCatching {
             if (section == 1) item { DeparturePageTitle("Earnings") }
             if(section==3)item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.weight(1f)) { DeparturePageTitle("Your transfers", "Departure times in East Africa Time (EAT)") }
+                    Box(Modifier.weight(1f)) { DeparturePageTitle("Trips", "Departure times · EAT") }
                     IconButton(onClick = { navTarget = NavTarget(null, null) }) {
                         Icon(MireliIcons.Map, "Open live map", tint = MaterialTheme.colorScheme.secondary)
                     }
@@ -410,10 +412,10 @@ private fun policyLink(raw: String): String? = runCatching {
                             onRemovePhoto = vm::removeProfilePhoto)
                         renewalNote(state.eligibility)?.let { DepartureNote(it) }
                         (app.opt("reviewReason") as? String)?.takeIf { it.isNotBlank() }?.let { DepartureNote(it) }
-                        if (editingApplication) TextButton(onClick = {
-                            applicationStep = 0
-                            guidedApplication = true
-                        }, enabled = !state.loading) { Text("Resume guided application") }
+                        if (editingApplication) TextButton(
+                            onClick = { applicationStep = 0; guidedApplication = true },
+                            enabled = !state.loading,
+                        ) { Text("Resume guided application", color = MaterialTheme.colorScheme.secondary) }
                     }
                     val profileReady = profile.optString("fullName").let { it != "New applicant" && it.trim().length >= 3 } &&
                         profile.optString("plate").isNotBlank() && (profile.opt("phone") as? String).orEmpty().isNotBlank() &&
@@ -447,20 +449,33 @@ private fun policyLink(raw: String): String? = runCatching {
                                 DepartureSection("Verification checklist")
                                 if (required.isNotEmpty()) {
                                     Text("$onFile of ${required.size} required documents on file",
-                                        style = MaterialTheme.typography.labelLarge)
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     LinearProgressIndicator(progress = { onFile.toFloat() / required.size },
                                         modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
-                                DepartureNote("PDF, JPG or PNG · up to ${documentLimit / (1024 * 1024)} MB. Use a clear copy.")
+                                if (guidedApplication || expandedDocumentGroup != null) {
+                                    DepartureNote("PDF, JPG or PNG · up to ${documentLimit / (1024 * 1024)} MB")
+                                }
                             }
                         }
                         val sections = requirements.groupBy(::documentSection)
                         for (group in listOf("Driver credentials", "Vehicle documents", "Optional documents")) {
                             val rows = sections[group] ?: continue
+                            val expanded = expandedDocumentGroup == group
                             item(key = group) {
-                                Text(group, style = MaterialTheme.typography.titleLarge,
-                                    modifier = Modifier.padding(top = MireliDesign.Space.xs))
+                                if (guidedApplication) {
+                                    DepartureSection(group)
+                                } else {
+                                    val count = rows.count {
+                                        documents[it.getString("id")]?.optString("state") in setOf("pending_review", "approved")
+                                    }
+                                    AccountDocumentGroup(group, "$count/${rows.size}", expanded) {
+                                        expandedDocumentGroup = if (expanded) null else group
+                                    }
+                                }
                             }
+                            if (!guidedApplication && !expanded) continue
                             itemsIndexed(rows, key = { _, requirement -> requirement.getString("id") }) { index, requirement ->
                                 val id = requirement.getString("id")
                                 DriverDocumentRow(requirement, documents[id], graceUntil, canEdit, state.documentUpload?.takeIf { it.type == id },
@@ -483,12 +498,11 @@ private fun policyLink(raw: String): String? = runCatching {
                         }
                     }
                     if (!guidedApplication) item {
-                        HorizontalDivider()
                         DepartureDisclosure("Driver & vehicle", if (!profileReady) "Complete your profile before submitting" else null) {
                             ServerProfile(onboarding, state.loading, vm::profile)
                         }
                     }
-                    if (!guidedApplication || (editingApplication && applicationStep == 2)) item {
+                    if (guidedApplication && editingApplication && applicationStep == 2) item {
                       Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
                         DepartureSection("Submit for review")
                         if (guidedApplication) {
@@ -522,7 +536,16 @@ private fun policyLink(raw: String): String? = runCatching {
                                     earningsPrefs.edit().putBoolean("hideBalance", hideBalance).apply()
                                 },
                                 onPayoutDetails = { showPayoutDetails = true },
-                                onTripHistory = { tripHistory = true; section = 3 },
+                                payoutStatus = statement.getJSONObject("destination").getString("status").let { status ->
+                                    when (status) {
+                                        "approved" -> (statement.opt("destinationMasked") as? String)
+                                            ?.takeIf { it.isNotBlank() }?.let { "M-Pesa payout number $it" } ?: "M-Pesa payout details approved"
+                                        "not_configured" -> "Set up your M-Pesa payout number"
+                                        "pending", "pending_review" -> "M-Pesa payout details in review"
+                                        "rejected" -> "M-Pesa payout details need attention"
+                                        else -> "M-Pesa · ${status.readableStatus()}"
+                                    }
+                                },
                                 onPayoutSupport = {
                                     supportCategory = "payout"
                                     supportFromEarnings = true
@@ -533,15 +556,15 @@ private fun policyLink(raw: String): String? = runCatching {
                         val pendingTotals = totals.filterNot { it.getString("status") == "completed" }
                         if (pendingTotals.isNotEmpty()) item {
                             Column(verticalArrangement = Arrangement.spacedBy(MireliDesign.Space.xs)) {
-                                DepartureSection("Other earnings")
+                                DepartureSection("Unsettled earnings")
                                 pendingTotals.forEach {
                                     DepartureValueRow(it.getString("status").settlementLabel(), shown(it.getLong("netMinor")))
                                 }
                             }
                         }
-                        item { DepartureSection("Settlements") }
-                        if (lines.isEmpty()) item {
-                            DepartureNote("No settlement records yet.")
+                        item {
+                            DepartureSection("Settlements")
+                            if (lines.isEmpty()) DepartureNote("No settlement records yet.")
                         }
                         itemsIndexed(lines, key = { _, line -> line.getString("id") }) { index, line ->
                             DepartureSettlement(line, hideBalance, Modifier.staggerIn(index.coerceAtMost(5)))
@@ -562,9 +585,10 @@ private fun policyLink(raw: String): String? = runCatching {
                             tripHistory = history
                         }
                     }
-                    if(!tripHistory&&state.eligibility?.optBoolean("eligible")!=true)item {
-                        DriverNotice(MireliIcons.VerifiedUser,"Driver approval needed",
-                            "You need current document approval to accept assignments, board passengers or start a journey. Check Account for your application status.")
+                    if (!tripHistory && !eligible && visibleTrips.isNotEmpty()) item {
+                        DepartureDisclosure("Driver approval needed") {
+                            TextButton(onClick = { section = 0 }) { Text("Check documents") }
+                        }
                     }
                     itemsIndexed(visibleTrips,key={_, trip -> trip.getString("id")}){index, trip->
                         LiveTripCard(trip,state.loading||state.pendingTripAction||!state.tripDataCurrent,
@@ -577,21 +601,24 @@ private fun policyLink(raw: String): String? = runCatching {
                             } else null,
                             primaryActionAnchored = assignment?.optString("id") == trip.optString("id"))
                     }
-                    if(visibleTrips.isEmpty())item {Column(Modifier.padding(vertical=20.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
-                        Text(when {
-                            state.trips==null && state.loading -> "Loading trips…"
-                            state.trips==null -> "Trip list unavailable"
-                            tripHistory -> "No past trips"
-                            else -> "No current assignments"
-                        },style=MaterialTheme.typography.titleLarge)
-                        if (state.trips != null || !state.loading) DepartureNote(when {
-                            state.trips==null -> "Refresh your account to check for transfers."
-                            tripHistory -> "Completed, cancelled and declined trips appear here."
-                            state.eligibility?.optBoolean("eligible")!=true -> "After approval, your assigned transfers will appear here."
-                            else -> "Refresh your account to check for new assignments."
-                        })
-                        if(!tripHistory&&state.eligibility?.optBoolean("eligible")!=true)TextButton(onClick={section=0}){Text("Continue onboarding")}
-                    }}
+                    if(visibleTrips.isEmpty())item {
+                        Column(Modifier.fillMaxWidth().padding(vertical = 10.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(when {
+                                state.trips==null && state.loading -> "Loading trips…"
+                                state.trips==null -> "Trip list unavailable"
+                                tripHistory -> "No past trips"
+                                else -> "No current assignments"
+                            }, style = MaterialTheme.typography.titleMedium)
+                            if (state.trips != null || !state.loading) DepartureNote(when {
+                                state.trips==null -> "Refresh your account to check for transfers."
+                                tripHistory -> "Completed, cancelled and declined trips will show here."
+                                !eligible -> "Assignments open after verification."
+                                else -> "New assignments will appear here."
+                            })
+                            if (!tripHistory && !eligible) TextButton(onClick = { section = 0 }) { Text("Continue onboarding") }
+                        }
+                    }
                 }else if(section==2) {
                     if(state.supportSent>0)item {Text("Support case sent. Mireli's replies appear below.",color=MaterialTheme.colorScheme.primary)}
                     item {FlowRow(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){listOf("trip","account","documents","payout","safety").forEach{category->FilterChip(selected=supportCategory==category,onClick={supportCategory=category},label={Text(category.replaceFirstChar{it.uppercase()})})}}}
@@ -612,16 +639,16 @@ private fun policyLink(raw: String): String? = runCatching {
                 }
                 if(section==0 && !guidedApplication)item {
                     Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                        DepartureSection("Settings and support")
-                        DriverActionTile("Driver support","Trips, documents and payout cases",MireliIcons.HeadsetMic) { section=2 }
+                        DepartureSection("Settings")
+                        DriverActionTile("Driver support","",MireliIcons.HeadsetMic) { section=2 }
                         AppearanceToggle(showSettings=true)
                     }
                 }
                 if(section==0 && !guidedApplication)item {
                     Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                        DepartureSection("Privacy and account deletion")
+                        DepartureSection("Privacy")
                         if (onboarding != null) DriverPrivacyNotice(onboarding, state.supportEmail)
-                        DriverActionTile("Request account deletion","Review a request before sending it to Mireli.",MireliIcons.PrivacyTip) {
+                        DriverActionTile("Request account deletion","",MireliIcons.PrivacyTip) {
                             supportCategory="account"
                             supportMessage="I am requesting deletion of my Mireli Driver account. Please let me know if you need any further information to handle my request."
                             section=2

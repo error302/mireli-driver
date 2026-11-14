@@ -102,9 +102,7 @@ internal fun DriverNotice(icon: ImageVector, title: String, detail: String) {
     }
 }
 
-@Composable
-internal fun TransferStatus(phase: String) {
-    val label = when (phase) {
+internal fun String.transferLabel(): String = when (this) {
         "assigned" -> "New assignment"
         "accepted" -> "Pickup pending"
         "at_pickup" -> "Boarding"
@@ -114,7 +112,9 @@ internal fun TransferStatus(phase: String) {
         "declined" -> "Declined"
         else -> "Status unavailable"
     }
-    Text(label, color = if (phase == "in_progress") MaterialTheme.colorScheme.primary
+@Composable
+internal fun TransferStatus(phase: String) {
+    Text(phase.transferLabel(), color = if (phase == "in_progress") MaterialTheme.colorScheme.primary
         else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
 }
 
@@ -189,6 +189,6 @@ internal fun TransferEndpoints(
 private fun EndpointLabel(label: String, name: String, showLabel: Boolean) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         if (showLabel) Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+        Text(name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
     }
 }

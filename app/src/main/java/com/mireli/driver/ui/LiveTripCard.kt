@@ -23,52 +23,55 @@ import org.json.JSONObject
     var bookingId by rememberSaveable(id,trip.getInt("version")){mutableStateOf<String?>(null)}
     val canAct=!busy&&eligible
     val passengers=trip.getJSONArray("passengers")
-    Column(modifier.fillMaxWidth().padding(vertical=4.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
-        TransferSchedule(trip)
-        TransferStatus(phase)
-        DepartureDisclosure(trip.getString("routeName"), initiallyExpanded = openInitially) {
-            Column(verticalArrangement=Arrangement.spacedBy(12.dp)) {
-            TransferEndpoints(trip,allowIntermediateStops=true,showLabels=false)
-            if(phase=="completed") {
-                DriverNotice(MireliIcons.AccountBalanceWallet,"Journey recorded","Check Earnings for settlement status.")
-            }
-            if (!primaryActionAnchored) trip.primaryTripAction()?.let { (command, label) ->
-                DepartureButton(onClick = { bookingId = null; action = command },
-                    enabled = if (command == "complete") !busy else canAct,
-                    modifier = Modifier.fillMaxWidth()) { Text(label) }
-            }
-            if (phase == "assigned") {
-                TextButton(onClick = { bookingId = null; action = "decline" }, enabled = canAct) {
-                    Text("Decline assignment", color = MaterialTheme.colorScheme.secondary)
+    Surface(modifier = modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerLow) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+            val summary = listOfNotNull(phase.transferLabel(), trip.departureDay(),
+                trip.departureClock()?.let { "$it EAT" }).joinToString(" · ")
+            DepartureDisclosure(trip.getString("routeName"), summary = summary, initiallyExpanded = openInitially) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TransferEndpoints(trip, allowIntermediateStops = true)
+                    val seats = trip.partySeats()
+                    if (seats > 0) Text(if (seats == 1) "1 passenger" else "$seats passengers",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (!primaryActionAnchored) trip.primaryTripAction()?.let { (command, label) ->
+                        DepartureButton(onClick = { bookingId = null; action = command },
+                            enabled = if (command == "complete") !busy else canAct,
+                            modifier = Modifier.fillMaxWidth()) { Text(label) }
+                    }
+                    if (phase == "assigned") {
+                        TextButton(onClick = { bookingId = null; action = "decline" }, enabled = canAct) {
+                            Text("Decline assignment", color = MaterialTheme.colorScheme.secondary)
+                        }
+                    }
+                    if(phase in listOf("accepted","at_pickup","in_progress")) {
+                        if(phase=="at_pickup")Text("Check booking codes and account for each booked seat before departure.",
+                            style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                        TextButton(onClick={expanded=!expanded}){
+                            Icon(MireliIcons.Groups,null,Modifier.size(20.dp));Spacer(Modifier.width(8.dp));Text(if(expanded)"Hide manifest" else "View passenger manifest")
+                        }
+                    }
+                    if(expanded)for(index in 0 until passengers.length()) {
+                        val p=passengers.getJSONObject(index)
+                        HorizontalDivider()
+                        Text("${p.getString("name")} · ${p.getInt("seats")} seats",style=MaterialTheme.typography.titleMedium)
+                        Text("${p.getInt("boarded")} boarded · ${p.getInt("noShow")} no-show · ${p.getInt("remaining")} waiting")
+                        p.optString("stageName").takeIf{it.isNotBlank()&&it!="null"}?.let{Text("Stage: $it")}
+                        p.optString("homeAddress").takeIf{it.isNotBlank()&&it!="null"}?.let{address->
+                            Text("${if(trip.getString("direction")=="TO_TERMINUS")"Pickup" else "Drop-off"}: $address")
+                            PassengerAddressMap(address, onSearchAddress)
+                        }
+                        p.optString("phone").takeIf{Regex("\\+?254[17][0-9]{8}").matches(it)}?.let{phone->
+                            TextButton(onClick={runCatching{context.startActivity(Intent(Intent.ACTION_DIAL,Uri.parse("tel:$phone")))}}){Text("Call passenger")}
+                        }
+                        if(phase=="at_pickup"&&p.getInt("remaining")>0) {
+                            OutlinedButton(onClick={bookingId=p.getString("id");action="board"},enabled=canAct){Text("Board this party")}
+                            TextButton(onClick={bookingId=p.getString("id");action="no_show"},enabled=canAct){Text("Report remaining seats as no-show")}
+                        }
+                    }
+                    if(phase in listOf("accepted","at_pickup","in_progress")) TripNavigation(trip, onRequestRoute = routeRequest, onStartNavigation = onStartNavigation)
+                    DepartureNote("Reference: $id")
                 }
-            }
-            if(phase in listOf("accepted","at_pickup","in_progress")) {
-                if(phase=="at_pickup")Text("Check booking codes and account for each booked seat before departure.",
-                    style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                TextButton(onClick={expanded=!expanded}){
-                    Icon(MireliIcons.Groups,null,Modifier.size(20.dp));Spacer(Modifier.width(8.dp));Text(if(expanded)"Hide manifest" else "View passenger manifest")
-                }
-            }
-            if(expanded)for(index in 0 until passengers.length()) {
-                val p=passengers.getJSONObject(index)
-                HorizontalDivider()
-                Text("${p.getString("name")} · ${p.getInt("seats")} seats",style=MaterialTheme.typography.titleMedium)
-                Text("${p.getInt("boarded")} boarded · ${p.getInt("noShow")} no-show · ${p.getInt("remaining")} waiting")
-                p.optString("stageName").takeIf{it.isNotBlank()&&it!="null"}?.let{Text("Stage: $it")}
-                p.optString("homeAddress").takeIf{it.isNotBlank()&&it!="null"}?.let{address->
-                    Text("${if(trip.getString("direction")=="TO_TERMINUS")"Pickup" else "Drop-off"}: $address")
-                    PassengerAddressMap(address, onSearchAddress)
-                }
-                p.optString("phone").takeIf{Regex("\\+?254[17][0-9]{8}").matches(it)}?.let{phone->
-                    TextButton(onClick={runCatching{context.startActivity(Intent(Intent.ACTION_DIAL,Uri.parse("tel:$phone")))}}){Text("Call passenger")}
-                }
-                if(phase=="at_pickup"&&p.getInt("remaining")>0) {
-                    OutlinedButton(onClick={bookingId=p.getString("id");action="board"},enabled=canAct){Text("Board this party")}
-                    TextButton(onClick={bookingId=p.getString("id");action="no_show"},enabled=canAct){Text("Report remaining seats as no-show")}
-                }
-            }
-            if(phase in listOf("accepted","at_pickup","in_progress")) TripNavigation(trip, onRequestRoute = routeRequest, onStartNavigation = onStartNavigation)
-            Text("Reference: $id",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

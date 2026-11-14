@@ -84,7 +84,6 @@ class DeparturePagesTest {
                     hidden = hidden.value,
                     onToggleBalance = { hidden.value = !hidden.value },
                     onPayoutDetails = { destination = "payout" },
-                    onTripHistory = { destination = "history" },
                     onPayoutSupport = { destination = "help" },
                 )
             }
@@ -93,7 +92,8 @@ class DeparturePagesTest {
         rule.onNodeWithContentDescription("Hide balances").performClick()
         rule.onNodeWithText("KSh 2,450").assertDoesNotExist()
         rule.onNodeWithText("KSh ••••").assertIsDisplayed()
-        for ((label, target) in listOf("M-Pesa" to "payout", "Trip history" to "history", "Payout help" to "help")) {
+        rule.onNodeWithText("Trip history").assertDoesNotExist()
+        for ((label, target) in listOf("M-Pesa" to "payout", "Payout help" to "help")) {
             rule.onNodeWithText(label).performClick()
             assertEquals(target, destination)
         }

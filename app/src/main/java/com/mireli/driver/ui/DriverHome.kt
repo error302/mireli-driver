@@ -162,13 +162,9 @@ private fun DriverAvatar(name: String?, size: Dp = 44.dp) {
 }
 
 @Composable
-internal fun DriverHomeTopBar(onOpenMap: () -> Unit, onSupport: () -> Unit) {
+internal fun DriverHomeTopBar(onSupport: () -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text("Home", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-        IconButton(onClick = onOpenMap) {
-            Icon(MireliIcons.Map, "Open live map", tint = MaterialTheme.colorScheme.secondary)
-        }
-        ThemeIconButton(tint = MaterialTheme.colorScheme.secondary)
+        Text("Home", Modifier.weight(1f), style = MaterialTheme.typography.pageTitle)
         IconButton(onClick = onSupport) {
             Icon(MireliIcons.HeadsetMic, "Help and support", tint = MaterialTheme.colorScheme.secondary)
         }
@@ -196,12 +192,12 @@ private fun ApplicationPanel(status: String?, onOpenAccount: () -> Unit, onRefre
         else -> "Check application status"
     }
     DriverOverviewSurface {
-        Text(title, style = MaterialTheme.typography.headlineSmall)
+        Text(title, style = MaterialTheme.typography.titleMedium)
         when (status) {
             "draft" -> {
-                DepartureNote("Add driver details and documents.")
-                DepartureButton(onClick = onOpenAccount, modifier = Modifier.fillMaxWidth()) {
-                    Text("Continue onboarding")
+                DepartureNote("Driver details and verification documents")
+                TextButton(onClick = onOpenAccount) {
+                    Text("Continue onboarding", color = MaterialTheme.colorScheme.secondary)
                 }
             }
             null -> TextButton(onClick = onRefresh) { Text("Refresh account", color = MaterialTheme.colorScheme.secondary) }
@@ -222,10 +218,10 @@ private fun NextTransferCard(
     val tripId = trip.optString("id")
     val departure = trip.departureInstant()
     val phase = trip.optString("phase")
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    DriverOverviewSurface {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically) {
-            Text("Next transfer", style = MaterialTheme.typography.titleLarge)
+            Text(if (phase == "in_progress") "Current trip" else "Next assignment", style = MaterialTheme.typography.titleMedium)
             if (departure != null) {
                 val day = if (departure.atZone(NairobiZone).toLocalDate() == now.atZone(NairobiZone).toLocalDate())
                     "Today" else DayFormat.format(departure)
@@ -267,24 +263,33 @@ private fun SgrTodayPanel(now: Instant, schedule: TrainSchedule, onRefresh: () -
     val services = schedule.services.orEmpty()
     val today = now.atZone(SgrTimetable.zone).toLocalDate()
     val upcoming = remember(services, now.epochSecond / 60) { SgrTimetable.upcoming(services, now) }
-    val next = upcoming.firstOrNull { it.at >= now }
+    val next = upcoming.filter { it.at >= now }.take(3)
     var fullTimetable by rememberSaveable { mutableStateOf(false) }
     val colors = MaterialTheme.colorScheme
-    Column(verticalArrangement = Arrangement.spacedBy(MireliDesign.Space.xs)) {
-        Text("Mombasa Terminus", style = MaterialTheme.typography.titleLarge)
-        DepartureNote("Published SGR timetable · EAT")
-        if (schedule.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-        if (schedule.failed) {
-            DepartureNote(if (schedule.services == null) "Train times unavailable." else "Showing last loaded times.")
-            TextButton(onClick = onRefresh) { Text("Refresh timetable") }
-        }
-        if (schedule.services?.isEmpty() == true) DepartureNote("No scheduled services.")
-        if (next != null) {
-            TrainTimeRow(next, next.at.atZone(SgrTimetable.zone).toLocalDate() != today, next = true)
-        }
-        if (services.isNotEmpty()) {
-            TextButton(onClick = { fullTimetable = true }, modifier = Modifier.heightIn(min = MireliDesign.TouchTarget)) {
-                Text("Full timetable", color = colors.secondary)
+    Surface(shape = MaterialTheme.shapes.medium, color = colors.surfaceContainerLow) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(MireliIcons.TrainFront, null, Modifier.size(19.dp), tint = colors.secondary)
+                Column(Modifier.weight(1f)) {
+                    Text("Mombasa Terminus", style = MaterialTheme.typography.titleMedium)
+                    Text("Scheduled trains · EAT", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                }
+                if (services.isNotEmpty()) {
+                    TextButton(onClick = { fullTimetable = true }, contentPadding = PaddingValues(horizontal = 6.dp),
+                        modifier = Modifier.heightIn(min = MireliDesign.TouchTarget)) {
+                        Text("Timetable", color = colors.secondary)
+                    }
+                }
+            }
+            if (schedule.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+            if (schedule.failed) {
+                DepartureNote(if (schedule.services == null) "Train times unavailable." else "Showing last loaded times.")
+                TextButton(onClick = onRefresh) { Text("Refresh timetable") }
+            }
+            if (schedule.services?.isEmpty() == true) DepartureNote("No scheduled services.")
+            next.forEach { event ->
+                HorizontalDivider(color = colors.outlineVariant)
+                TrainTimeRow(event, event.at.atZone(SgrTimetable.zone).toLocalDate() != today)
             }
         }
     }
@@ -316,9 +321,9 @@ private fun SgrTodayPanel(now: Instant, schedule: TrainSchedule, onRefresh: () -
 }
 
 @Composable
-private fun TrainTimeRow(event: SgrTimetable.Event, tomorrow: Boolean, next: Boolean = false) {
+private fun TrainTimeRow(event: SgrTimetable.Event, tomorrow: Boolean) {
     val colors = MaterialTheme.colorScheme
-    val movement = if (event.service.movement == SgrTimetable.Movement.Arrival) "From Nairobi" else "To Nairobi"
+    val movement = if (event.service.movement == SgrTimetable.Movement.Arrival) "Arrives from Nairobi" else "Departs for Nairobi"
     Row(
         Modifier.fillMaxWidth().padding(vertical = MireliDesign.Space.xs),
         horizontalArrangement = Arrangement.spacedBy(MireliDesign.Space.md),
@@ -326,12 +331,7 @@ private fun TrainTimeRow(event: SgrTimetable.Event, tomorrow: Boolean, next: Boo
     ) {
         Text(ClockFormat.format(event.at), style = MaterialTheme.typography.timetableClock)
         Column(Modifier.weight(1f)) {
-            val label = when {
-                !next -> movement
-                event.service.movement == SgrTimetable.Movement.Arrival -> "Next arrival from Nairobi"
-                else -> "Next departure to Nairobi"
-            }
-            Text(label, style = MaterialTheme.typography.titleSmall)
+            Text(movement, style = MaterialTheme.typography.titleSmall)
             Text(if (tomorrow) "${event.service.name} · ${DayFormat.format(event.at)}" else event.service.name,
                 style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
         }
@@ -446,7 +446,7 @@ internal fun DriverHomeDashboard(
         if (!eligible) {
             if (renewalNote == null) ApplicationPanel(applicationStatus, onOpenAccount, onRefresh)
             SgrTodayPanel(now, schedule, onRefreshTimetable)
-            TextButton(onClick = onOpenMap) { Text("Live map", color = MaterialTheme.colorScheme.secondary) }
+            HomeMapRow(onOpenMap)
             return@Column
         }
 
@@ -487,6 +487,20 @@ internal fun DriverHomeDashboard(
             Text("No assignments", style = MaterialTheme.typography.headlineSmall)
         }
         SgrTodayPanel(now, schedule, onRefreshTimetable)
+        HomeMapRow(onOpenMap)
+    }
+}
+
+@Composable
+private fun HomeMapRow(onOpenMap: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    Surface(onClick = onOpenMap, shape = MaterialTheme.shapes.small, color = colors.surfaceContainerLow) {
+        Row(Modifier.fillMaxWidth().heightIn(min = MireliDesign.TouchTarget).padding(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(MireliIcons.Map, null, Modifier.size(20.dp), tint = colors.secondary)
+            Text("Live map", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+            Icon(MireliIcons.ChevronRight, null, Modifier.size(18.dp), tint = colors.secondary)
+        }
     }
 }
 

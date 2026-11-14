@@ -202,7 +202,7 @@ internal val VerifiedBlue = Color(0xFF1D7AF3)
  * the service provides their HTTPS URLs.
  */
 @Composable fun DriverPrivacyNotice(onboarding: JSONObject?, supportEmail: String) {
-    CollapsibleCard(MireliIcons.PrivacyTip, "Privacy notice", "What Mireli stores, and your rights — in plain words.") {
+    CollapsibleCard(MireliIcons.PrivacyTip, "Privacy notice") {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Mireli Driver stores your profile and vehicle details, the documents you upload for verification, your assignments, and your settlement statement. Documents live in Mireli's private review service and are used only to verify you — never shown to passengers or the public.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -225,7 +225,7 @@ internal val VerifiedBlue = Color(0xFF1D7AF3)
             Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(title, style = MaterialTheme.typography.titleMedium)
-                Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (detail.isNotBlank()) Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }

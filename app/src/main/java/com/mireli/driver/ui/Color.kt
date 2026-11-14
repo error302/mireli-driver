@@ -5,6 +5,9 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
 
 internal const val RouteBlue = "#1565A8"
+internal val StatementBlue = Color(0xFF123559)
+internal val StatementInk = Color(0xFFF4F8FD)
+internal val StatementMuted = Color(0xFFC3D5E8)
 
 internal val LightColors=lightColorScheme(
     primary=Color(0xFF087460),onPrimary=Color.White,primaryContainer=Color(0xFFE0F3EC),onPrimaryContainer=Color(0xFF06302A),

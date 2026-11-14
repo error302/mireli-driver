@@ -22,11 +22,18 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import org.json.JSONObject
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+
+private val SettlementDate = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.forLanguageTag("en-KE"))
+    .withZone(ZoneId.of("Africa/Nairobi"))
 
 @Composable
 internal fun DeparturePageTitle(title: String, detail: String? = null) {
-    Column(Modifier.padding(top = 10.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(title, Modifier.semantics { heading() }, style = MaterialTheme.typography.headlineLarge)
+    Column(Modifier.padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(title, Modifier.semantics { heading() }, style = MaterialTheme.typography.pageTitle)
         detail?.let { DepartureNote(it) }
     }
 }
@@ -38,9 +45,7 @@ internal fun DepartureNote(text: String) {
 
 @Composable
 internal fun DepartureSection(title: String) {
-    Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(title, Modifier.semantics { heading() }, style = MaterialTheme.typography.titleLarge)
-    }
+    Text(title, Modifier.semantics { heading() }, style = MaterialTheme.typography.titleMedium)
 }
 
 @Composable
@@ -48,11 +53,13 @@ internal fun DepartureDisclosure(
     title: String,
     summary: String? = null,
     initiallyExpanded: Boolean = false,
+    modifier: Modifier = Modifier,
+    trailing: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
     var expanded by rememberSaveable(initiallyExpanded) { mutableStateOf(initiallyExpanded) }
     val interaction = remember { MutableInteractionSource() }
-    Column {
+    Column(modifier) {
         Row(
             Modifier.fillMaxWidth().heightIn(min = 48.dp).pressScale(interaction)
                 .clickable(interactionSource = interaction, indication = ripple(), role = Role.Button,
@@ -63,8 +70,9 @@ internal fun DepartureDisclosure(
         ) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(title, style = MaterialTheme.typography.titleMedium)
-                summary?.let { DepartureNote(it) }
+                summary?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
+            trailing?.invoke()
             Icon(if (expanded) MireliIcons.ExpandLess else MireliIcons.ExpandMore, null,
                 tint = MaterialTheme.colorScheme.secondary)
         }
@@ -89,31 +97,29 @@ internal fun DepartureReveal(visible: Boolean, content: @Composable () -> Unit) 
 @Composable
 internal fun DepartureTripTabs(history: Boolean, onSelect: (Boolean) -> Unit) {
     val colors = MaterialTheme.colorScheme
-    Row(Modifier.fillMaxWidth().selectableGroup()) {
-        listOf("Assignments", "History").forEachIndexed { index, title ->
-            val selected = (index == 1) == history
-            val interaction = remember { MutableInteractionSource() }
-            Column(
-                Modifier.weight(1f).pressScale(interaction).selectable(
-                    selected = selected, interactionSource = interaction, indication = ripple(), role = Role.Tab,
-                    onClick = { onSelect(index == 1) }),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Box(Modifier.heightIn(min = MireliDesign.TouchTarget).padding(horizontal = 4.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
-                    Text(title, style = MaterialTheme.typography.labelLarge,
-                        color = if (selected) colors.secondary else colors.onSurfaceVariant)
+    Surface(shape = MaterialTheme.shapes.small, color = colors.surfaceContainerLow) {
+        Row(Modifier.fillMaxWidth().padding(3.dp).selectableGroup()) {
+            listOf("Assignments", "History").forEachIndexed { index, title ->
+                val selected = (index == 1) == history
+                val interaction = remember { MutableInteractionSource() }
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    shape = MaterialTheme.shapes.extraSmall,
+                    color = if (selected) colors.secondaryContainer else Color.Transparent,
+                ) {
+                    Box(
+                        Modifier.heightIn(min = MireliDesign.TouchTarget).pressScale(interaction)
+                            .selectable(selected, interactionSource = interaction, indication = ripple(),
+                                role = Role.Tab, onClick = { onSelect(index == 1) })
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(title, style = MaterialTheme.typography.titleSmall,
+                            color = if (selected) colors.onSecondaryContainer else colors.onSurfaceVariant)
+                    }
                 }
-                HorizontalDivider(thickness = 2.dp, color = if (selected) colors.secondary else colors.outlineVariant)
             }
         }
-    }
-}
-
-@Composable
-internal fun DepartureAmount(label: String, amount: String) {
-    Column(Modifier.padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        DepartureNote(label)
-        Text(amount, style = MaterialTheme.typography.displaySmall, color = MaterialTheme.colorScheme.primary)
     }
 }
 
@@ -131,16 +137,25 @@ internal fun DepartureValueRow(label: String, value: String) {
 internal fun DepartureSettlement(line: JSONObject, hideBalance: Boolean, modifier: Modifier = Modifier) {
     val status = line.getString("status")
     fun shown(field: String) = if (hideBalance) "KSh ••••" else money(line.getLong(field))
-    Column(modifier.fillMaxWidth()) {
-        DepartureDisclosure(line.getString("routeName"), line.getString("serviceType").readableStatus()) {
-            Column {
-                DepartureValueRow("Gross", shown("grossMinor"))
-                DepartureValueRow("Commission", shown("commissionMinor"))
-                DepartureValueRow("Home surcharge", shown("surchargeMinor"))
-                line.optString("failureReason").takeIf { it.isNotBlank() && it != "null" }?.let { DepartureNote(it) }
-            }
+    val stamp = (line.opt("completedAt") as? String) ?: (line.opt("initiatedAt") as? String)
+    val date = stamp?.let { runCatching { SettlementDate.format(Instant.parse(it)) }.getOrNull() }
+    val summary = listOfNotNull(status.settlementLabel(), date).joinToString(" · ")
+    DepartureDisclosure(
+        line.getString("routeName"),
+        summary = summary,
+        modifier = modifier,
+        trailing = {
+            Text(shown("netMinor"), style = MaterialTheme.typography.numericDetail,
+                color = MaterialTheme.colorScheme.onSurface)
+        },
+    ) {
+        Column {
+            DepartureValueRow("Gross", shown("grossMinor"))
+            DepartureValueRow("Commission", shown("commissionMinor"))
+            DepartureValueRow("Home surcharge", shown("surchargeMinor"))
+            if (line.optLong("platformFeeMinor") != 0L) DepartureValueRow("Platform fee", shown("platformFeeMinor"))
+            line.optString("failureReason").takeIf { it.isNotBlank() && it != "null" }?.let { DepartureNote(it) }
         }
-        DepartureValueRow(status.settlementLabel(), shown("netMinor"))
     }
 }
 
