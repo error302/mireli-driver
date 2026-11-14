@@ -6,6 +6,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -17,10 +18,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.mireli.driver.R
 import org.json.JSONObject
 import java.time.Instant
 import java.time.ZoneId
@@ -35,6 +38,31 @@ internal fun DeparturePageTitle(title: String, detail: String? = null) {
     Column(Modifier.padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(title, Modifier.semantics { heading() }, style = MaterialTheme.typography.pageTitle)
         detail?.let { DepartureNote(it) }
+    }
+}
+
+@Composable
+internal fun DriverSectionHeader(
+    title: String,
+    detail: String? = null,
+    action: @Composable () -> Unit = {},
+) {
+    val colors = MaterialTheme.colorScheme
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = MireliDesign.TouchTarget),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Surface(shape = MaterialTheme.shapes.small, color = Color.White) {
+            Image(painterResource(R.drawable.mireli_driver_logo), contentDescription = null,
+                modifier = Modifier.size(40.dp).padding(3.dp))
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, Modifier.semantics { heading() }, color = colors.secondary,
+                style = MaterialTheme.typography.pageTitle)
+            detail?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant) }
+        }
+        action()
     }
 }
 

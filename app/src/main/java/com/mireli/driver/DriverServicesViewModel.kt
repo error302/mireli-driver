@@ -141,7 +141,7 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
     }
     private suspend fun serviceStatus() {
         val status = try {
-            api.request("/status").also {
+            api.serviceStatus().also {
                 if (it.optString("apiVersion") != "v1" || it.opt("simulation") != BuildConfig.DRIVER_SERVICE_TEST) {
                     throw DriverServiceException(503, "This build cannot connect to that service environment.")
                 }
@@ -285,12 +285,12 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
         mutable.value=mutable.value.copy(pendingTripAction=true)
         sendSavedAction(id,pending)
     }
-    fun navigationRoute(tripId:String,stageId:String,origin:GeoPoint,onComplete:(Result<JSONObject>)->Unit) {
+    fun navigationRoute(tripId:String,stageId:String,origin:GeoPoint,avoidFerries:Boolean,onComplete:(Result<JSONObject>)->Unit) {
         val token=session?.token
         if(token==null){onComplete(Result.failure(IllegalStateException("Sign in again to request directions.")));return}
         viewModelScope.launch {
             val result=runCatching {api.request("/navigation/route","POST",token,json=JSONObject()
-                .put("tripId",tripId).put("stageId",stageId).put("origin",JSONObject().put("latitude",origin.latitude).put("longitude",origin.longitude)))}
+                .put("tripId",tripId).put("stageId",stageId).put("avoidFerries", avoidFerries).put("origin",JSONObject().put("latitude",origin.latitude).put("longitude",origin.longitude)))}
             onComplete(result)
         }
     }
@@ -307,11 +307,11 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
         }.filter { it.point.valid }
     }
 
-    suspend fun destinationRoute(origin: GeoPoint, target: GeoPoint): DriverRoute {
+    suspend fun destinationRoute(origin: GeoPoint, target: GeoPoint, avoidFerries: Boolean): DriverRoute {
         val token = session?.token ?: error("Sign in again to request directions.")
         fun GeoPoint.json() = JSONObject().put("latitude", latitude).put("longitude", longitude)
         return DriverRoute.fromJson(api.request("/navigation/destination", "POST", token,
-            JSONObject().put("origin", origin.json()).put("destination", target.json())))
+            JSONObject().put("origin", origin.json()).put("destination", target.json()).put("avoidFerries", avoidFerries)))
     }
 
     internal fun satelliteSessionToken(): String? = session?.token

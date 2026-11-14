@@ -70,7 +70,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-typealias RouteRequest=(tripId:String,stageId:String,origin:GeoPoint,onComplete:(Result<JSONObject>)->Unit)->Unit
+typealias RouteRequest=(tripId:String,stageId:String,origin:GeoPoint,avoidFerries:Boolean,onComplete:(Result<JSONObject>)->Unit)->Unit
 private const val LOCATION_MAX_AGE_MS = 45_000L
 
 /** Heading is only trusted above this speed; below it the route bearing is used instead. */
@@ -237,7 +237,7 @@ internal fun openMaps(context:Context,url:String):Boolean {
             if(request==null)return@LaunchedEffect
             val revision = routeRequestRevision
             routeLoading=true;routeError=null;lastRouteRequest=now
-            request(tripId,stop.id,point){result->
+            request(tripId,stop.id,point,false){result->
                 if (revision != routeRequestRevision) return@request
                 if(routingAvailable&&navigating&&selectedStopId==stop.id) {
                     result.onSuccess {json->

@@ -40,8 +40,9 @@ object DriverNavigation {
         }
         return target?.takeIf { it.valid }
     }
-    fun directions(stop:NavigationStop):String?=stop.takeIf{it.valid}?.let{
-        "https://www.google.com/maps/dir/?api=1&destination=${encode("${it.latitude},${it.longitude}")}&travelmode=driving&dir_action=navigate"
+    fun directions(stop:NavigationStop, avoidFerries: Boolean = false):String?=stop.takeIf{it.valid}?.let{
+        val route = "https://www.google.com/maps/dir/?api=1&destination=${encode("${it.latitude},${it.longitude}")}&travelmode=driving&dir_action=navigate"
+        if (avoidFerries) "$route&avoid=ferries" else route
     }
     fun addressSearch(address:String):String?=address.trim().takeIf{it.length in 3..300 && it.none{c->c.code<32}}?.let{
         "https://www.google.com/maps/search/?api=1&query=${encode(it)}"

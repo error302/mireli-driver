@@ -36,6 +36,7 @@ import androidx.core.location.LocationManagerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.mireli.driver.data.DriverServiceException
 import com.mireli.driver.domain.DriverNavigation
 import com.mireli.driver.domain.DriverRoute
 import com.mireli.driver.domain.GeoPoint
@@ -195,7 +196,7 @@ internal fun DriverNavigationScreen(
     onClose: () -> Unit,
     simulated: SimulatedDrive? = null,
     onSearch: (suspend (String, GeoPoint?) -> List<DriverDestination>)? = null,
-    onDestinationRoute: (suspend (GeoPoint, GeoPoint) -> DriverRoute)? = null,
+    onDestinationRoute: (suspend (GeoPoint, GeoPoint, Boolean) -> DriverRoute)? = null,
     satelliteToken: String? = null,
     initialQuery: String? = null,
 ) {
@@ -205,9 +206,11 @@ internal fun DriverNavigationScreen(
     val position = if (simulated != null) rememberSimulatedPosition(simulated) else livePosition
     var routeState by remember { mutableStateOf<DriverRoute?>(null) }
     var routeError by remember { mutableStateOf<String?>(null) }
+    var ferryFreeRouteUnavailable by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var lastRequest by remember { mutableLongStateOf(0L) }
     var routeAttempt by remember { mutableIntStateOf(0) }
+    var avoidFerries by rememberSaveable { mutableStateOf(true) }
     var permissionAsked by rememberSaveable { mutableStateOf(false) }
     var manualFallback by remember { mutableStateOf(false) }
     var expanded by rememberSaveable { mutableStateOf(false) }
@@ -252,19 +255,24 @@ internal fun DriverNavigationScreen(
     LaunchedEffect(tripId, destination, current, usableRouteOrigin, offRoute, routeAttempt, simulated) {
         val point = current ?: return@LaunchedEffect
         val target = destination ?: return@LaunchedEffect
-        if (simulated != null || loading || !usableRouteOrigin) return@LaunchedEffect
+        if (simulated != null || loading || !usableRouteOrigin || ferryFreeRouteUnavailable) return@LaunchedEffect
         val now = SystemClock.elapsedRealtime()
         if (lastRequest > 0 && now - lastRequest < 25_000L) return@LaunchedEffect
         if (routeState != null && !offRoute && lastRequest != 0L) return@LaunchedEffect
         val request = onRequestRoute
+        val attempt = routeAttempt
         if (stop != null && request != null) {
             loading = true
             routeError = null
             lastRequest = now
-            request(tripId.orEmpty(), target.id, point) { result ->
+            request(tripId.orEmpty(), target.id, point, avoidFerries) { result ->
+                if (routeAttempt != attempt) return@request
                 result.mapCatching(DriverRoute::fromJson)
                     .onSuccess { routeState = it; offRouteSamples = 0 }
-                    .onFailure { routeError = it.message?.take(160) ?: "Directions are unavailable." }
+                    .onFailure { error ->
+                        ferryFreeRouteUnavailable = (error as? DriverServiceException)?.code == "NO_FERRY_FREE_ROUTE"
+                        routeError = error.message?.take(160) ?: "Directions are unavailable."
+                    }
                 loading = false
             }
         } else if (stop == null && onDestinationRoute != null) {
@@ -273,14 +281,17 @@ internal fun DriverNavigationScreen(
             lastRequest = now
             scope.launch {
                 try {
-                    val result = onDestinationRoute(point, GeoPoint(target.latitude, target.longitude))
-                    if (previewStop === target) { routeState = result; offRouteSamples = 0 }
+                    val result = onDestinationRoute(point, GeoPoint(target.latitude, target.longitude), avoidFerries)
+                    if (previewStop === target && routeAttempt == attempt) { routeState = result; offRouteSamples = 0 }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
-                    if (previewStop === target) routeError = error.message?.take(160) ?: "Directions are unavailable."
+                    if (previewStop === target && routeAttempt == attempt) {
+                        ferryFreeRouteUnavailable = (error as? DriverServiceException)?.code == "NO_FERRY_FREE_ROUTE"
+                        routeError = error.message?.take(160) ?: "Directions are unavailable."
+                    }
                 } finally {
-                    if (previewStop === target) loading = false
+                    if (previewStop === target && routeAttempt == attempt) loading = false
                 }
             }
         }
@@ -325,8 +336,10 @@ internal fun DriverNavigationScreen(
     fun clearPreview() {
         searchJob?.cancel()
         previewStop = null
+        routeAttempt++
         routeState = null
         routeError = null
+        ferryFreeRouteUnavailable = false
         searchResults = null
         searchError = null
         loading = false
@@ -545,13 +558,27 @@ internal fun DriverNavigationScreen(
             expanded = expanded,
             onToggle = { expanded = !expanded },
             canOpenMaps = mapTarget != null,
+            includesFerry = route?.includesFerry == true,
+            avoidFerries = avoidFerries,
+            onToggleFerryPreference = if (simulated == null && destination != null &&
+                (onRequestRoute != null || onDestinationRoute != null)) {
+                {
+                    avoidFerries = !avoidFerries
+                    routeState = null
+                    routeError = null
+                    ferryFreeRouteUnavailable = false
+                    offRouteSamples = 0
+                    lastRequest = 0
+                    routeAttempt++
+                }
+            } else null,
             onOpenMaps = {
                 val target = mapTarget!!
-                manualFallback = !DriverNavigation.directions(target).let { url -> url != null && openMaps(context, url) }
+                manualFallback = !DriverNavigation.directions(target, avoidFerries).let { url -> url != null && openMaps(context, url) }
             },
             manualFallback = manualFallback,
             onRetry = if (routeError != null && usableRouteOrigin && !loading) {
-                { lastRequest = 0; routeAttempt++ }
+                { ferryFreeRouteUnavailable = false; lastRequest = 0; routeAttempt++ }
             } else null
         )
 
@@ -590,6 +617,9 @@ private fun NavigationSheet(
     expanded: Boolean,
     onToggle: () -> Unit,
     canOpenMaps: Boolean,
+    includesFerry: Boolean,
+    avoidFerries: Boolean,
+    onToggleFerryPreference: (() -> Unit)?,
     onOpenMaps: () -> Unit,
     manualFallback: Boolean,
     onRetry: (() -> Unit)?,
@@ -628,8 +658,14 @@ private fun NavigationSheet(
                 }
                 DepartureNote(status)
             }
+            if (includesFerry) DepartureNote("Includes a ferry crossing")
             if (canOpenMaps) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(MireliDesign.Space.xs)) {
+                    if (onToggleFerryPreference != null) {
+                        FilterChip(selected = avoidFerries, onClick = onToggleFerryPreference,
+                            enabled = !loading, modifier = Modifier.heightIn(min = MireliDesign.TouchTarget),
+                            label = { Text("Avoid ferries") })
+                    }
                     if (onRetry != null) TextButton(onClick = onRetry) {
                         Text("Retry route", color = colors.secondary)
                     }

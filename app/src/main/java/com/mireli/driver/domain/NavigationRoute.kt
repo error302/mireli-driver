@@ -10,7 +10,13 @@ data class GeoPoint(val latitude:Double,val longitude:Double) {
     val valid get()=latitude.isFinite()&&longitude.isFinite()&&latitude in -90.0..90.0&&longitude in -180.0..180.0&&!(latitude==0.0&&longitude==0.0)
 }
 data class RouteManeuver(val instruction:String,val distanceMeters:Int,val durationSeconds:Int,val beginShapeIndex:Int,val endShapeIndex:Int)
-data class DriverRoute(val geometry:List<GeoPoint>,val distanceMeters:Int,val durationSeconds:Int,val maneuvers:List<RouteManeuver>) {
+data class DriverRoute(
+    val geometry: List<GeoPoint>,
+    val distanceMeters: Int,
+    val durationSeconds: Int,
+    val maneuvers: List<RouteManeuver>,
+    val includesFerry: Boolean? = null,
+) {
     companion object {
         fun fromJson(json:JSONObject):DriverRoute {
             val geometry = when (json.optString("provider")) {
@@ -32,7 +38,8 @@ data class DriverRoute(val geometry:List<GeoPoint>,val distanceMeters:Int,val du
                 RouteManeuver(m.getString("instruction").filterNot(Char::isISOControl).take(240),m.getInt("distanceMeters").coerceAtLeast(0),
                     m.getInt("durationSeconds").coerceAtLeast(0),m.getInt("beginShapeIndex").coerceIn(0,geometry.lastIndex),m.getInt("endShapeIndex").coerceIn(0,geometry.lastIndex))
             }}
-            return DriverRoute(geometry,json.getInt("distanceMeters").coerceAtLeast(0),json.getInt("durationSeconds").coerceAtLeast(0),maneuvers)
+            return DriverRoute(geometry, json.getInt("distanceMeters").coerceAtLeast(0),
+                json.getInt("durationSeconds").coerceAtLeast(0), maneuvers, json.opt("includesFerry") as? Boolean)
         }
     }
 }

@@ -330,18 +330,18 @@ private fun policyLink(raw: String): String? = runCatching {
                 }
             }
             if(section==0 && !guidedApplication)item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.weight(1f)) { DeparturePageTitle("Account") }
-                    IconButton(onClick = { vm.refresh(); vm.loadProfilePhoto() }, enabled = !state.loading) {
+                DriverSectionHeader("Account") {
+                    IconButton(onClick = { vm.refresh(); vm.loadProfilePhoto() }, enabled = !state.loading,
+                        modifier = Modifier.size(MireliDesign.TouchTarget)) {
                         Icon(MireliIcons.Refresh, "Refresh account", tint = MaterialTheme.colorScheme.secondary)
                     }
                 }
             }
-            if (section == 1) item { DeparturePageTitle("Earnings") }
+            if (section == 1) item { DriverSectionHeader("Earnings") }
             if(section==3)item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.weight(1f)) { DeparturePageTitle("Trips", "Departure times · EAT") }
-                    IconButton(onClick = { navTarget = NavTarget(null, null) }) {
+                DriverSectionHeader("Trips", "Departure times · EAT") {
+                    IconButton(onClick = { navTarget = NavTarget(null, null) },
+                        modifier = Modifier.size(MireliDesign.TouchTarget)) {
                         Icon(MireliIcons.Map, "Open live map", tint = MaterialTheme.colorScheme.secondary)
                     }
                 }

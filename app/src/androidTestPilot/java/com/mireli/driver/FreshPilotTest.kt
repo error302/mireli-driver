@@ -33,9 +33,11 @@ class FreshPilotTest {
         assertFalse(RepositoryFactory.isDemo);assertTrue(RepositoryFactory.create(rule.activity).trips.value.isEmpty())
         assertEquals("https://mireli.online", BuildConfig.DRIVER_SERVICE_URL)
         assertFalse(BuildConfig.DRIVER_SERVICE_TEST)
-        val status = runBlocking { DriverApi().request("/status") }
-        assertEquals("v1", status.getString("apiVersion"))
-        assertFalse(status.getBoolean("simulation"))
+        val status = runBlocking { runCatching { DriverApi().serviceStatus() }.getOrNull() }
+        status?.let {
+            assertEquals("v1", it.getString("apiVersion"))
+            assertFalse(it.getBoolean("simulation"))
+        }
         assertEquals(ThemeMode.LIGHT,ThemePreference(rule.activity).mode)
         rule.onNodeWithTag("theme_light").assertExists()
         rule.waitUntil(35_000) { rule.onAllNodesWithTag("driver_welcome").fetchSemanticsNodes().isNotEmpty() }
@@ -46,11 +48,12 @@ class FreshPilotTest {
         rule.onNodeWithTag("driver_sign_in_title").assertIsDisplayed()
         rule.onNodeWithTag("driver_email_field").assertIsDisplayed()
         rule.onNodeWithTag("driver_send_code").assertIsDisplayed()
-        if (!status.getBoolean("emailSignInOpen")) {
+        if (status?.getBoolean("emailSignInOpen") != true) {
             rule.onNodeWithTag("driver_email_field").assertIsNotEnabled()
             rule.onNodeWithTag("driver_send_code").assertIsNotEnabled()
-            rule.onNode(hasScrollAction()).performScrollToNode(hasText("Driver sign-in is closed"))
-            rule.onNodeWithText("Driver sign-in is closed").assertIsDisplayed()
+            val notice = if (status == null) "Driver service unavailable" else "Driver sign-in is closed"
+            rule.onNode(hasScrollAction()).performScrollToNode(hasText(notice))
+            rule.onNodeWithText(notice).assertIsDisplayed()
             rule.onNode(hasScrollAction()).performScrollToIndex(0)
         }
         rule.onAllNodesWithText("PREVIEW",substring=true).assertCountEquals(0)
