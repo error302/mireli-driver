@@ -6,6 +6,7 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -71,7 +72,8 @@ private fun HomeLocationCard(
                 location = position.point.takeIf { fix != null },
                 fix = fix,
                 route = null,
-                modifier = Modifier.fillMaxWidth().height(148.dp).background(colors.surfaceContainer),
+                modifier = Modifier.fillMaxWidth().height(172.dp).background(colors.surfaceContainer)
+                    .clickable(onClickLabel = "Open live map", onClick = onOpenMap),
                 interactive = false,
                 controls = false,
                 homePreview = true,

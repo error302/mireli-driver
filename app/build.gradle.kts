@@ -17,8 +17,8 @@ android {
         applicationId = "io.github.error302.mireli.driver"
         minSdk = 26
         targetSdk = 36
-        versionCode = 30
-        versionName = "0.9.18"
+        versionCode = 31
+        versionName = "0.9.19"
         buildConfigField("String", "DRIVER_SERVICE_URL", "\"https://mireli.online\"")
         buildConfigField("boolean", "DRIVER_SERVICE_TEST", "false")
         val mapStyleUrl = providers.gradleProperty("MIRELI_MAP_STYLE_URL").orElse("https://tiles.openfreemap.org/styles/liberty").get()

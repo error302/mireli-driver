@@ -16,7 +16,7 @@ import org.json.JSONObject
     routeRequest:RouteRequest?=null, modifier:Modifier=Modifier, openInitially:Boolean=false,
     onStartNavigation: ((NavigationStop) -> Unit)? = null,
     onSearchAddress: ((String) -> Unit)? = null,
-    primaryActionAnchored: Boolean = false) {
+    showNavigation: Boolean = true, primaryActionAnchored: Boolean = false) {
     val id=trip.getString("id");val phase=trip.getString("phase");val context=LocalContext.current
     var expanded by rememberSaveable(id){mutableStateOf(false)}
     var action by rememberSaveable(id,trip.getInt("version")){mutableStateOf<String?>(null)}
@@ -28,14 +28,15 @@ import org.json.JSONObject
         Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
             val summary = listOfNotNull(phase.transferLabel(), trip.departureDay(),
                 trip.departureClock()?.let { "$it EAT" }).joinToString(" · ")
-            DepartureDisclosure(trip.getString("routeName"), summary = summary, initiallyExpanded = openInitially) {
+            val title = if (primaryActionAnchored) "Trip details" else trip.getString("routeName")
+            DepartureDisclosure(title, summary = summary.takeUnless { primaryActionAnchored }, initiallyExpanded = openInitially) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     TransferEndpoints(trip, allowIntermediateStops = true)
                     val seats = trip.partySeats()
                     if (seats > 0) Text(if (seats == 1) "1 passenger" else "$seats passengers",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (!primaryActionAnchored) trip.primaryTripAction()?.let { (command, label) ->
-                        DepartureButton(onClick = { bookingId = null; action = command },
+                        DepartureButton(onClick = { bookingId = null; action = command }, drivingAction = true,
                             enabled = if (command == "complete") !busy else canAct,
                             modifier = Modifier.fillMaxWidth()) { Text(label) }
                     }
@@ -69,8 +70,8 @@ import org.json.JSONObject
                             TextButton(onClick={bookingId=p.getString("id");action="no_show"},enabled=canAct){Text("Report remaining seats as no-show")}
                         }
                     }
-                    if(phase in listOf("accepted","at_pickup","in_progress")) TripNavigation(trip, onRequestRoute = routeRequest, onStartNavigation = onStartNavigation)
-                    DepartureNote("Reference: $id")
+                    if(showNavigation && phase in listOf("accepted","at_pickup","in_progress")) TripNavigation(trip, onRequestRoute = routeRequest, onStartNavigation = onStartNavigation)
+                    DepartureNote("Trip reference · $id")
                 }
             }
         }

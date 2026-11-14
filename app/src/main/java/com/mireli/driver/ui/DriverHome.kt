@@ -46,7 +46,7 @@ internal fun rememberNow(intervalMs: Long = 1_000L): Instant {
 }
 
 internal fun JSONObject.parties(): List<JSONObject> {
-    val array = optJSONArray("passengers") ?: return emptyList()
+    val array = optJSONArray("offlineSeatCounts") ?: optJSONArray("passengers") ?: return emptyList()
     return (0 until array.length()).mapNotNull(array::optJSONObject)
 }
 
@@ -187,7 +187,7 @@ internal fun DriverIdentity(name: String?, verified: Boolean, hour: Int) {
                     style = MaterialTheme.typography.titleMedium)
                 if (verified) VerifiedBadge(verified = true, compact = true)
             }
-            Text("Let’s start earning!", style = MaterialTheme.typography.bodySmall,
+            if (verified) Text("Let’s start earning!", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -260,7 +260,7 @@ private fun NextTransferCard(
         if (seats > 0) Text(if (seats == 1) "1 passenger" else "$seats passengers",
             style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
         TextButton(onClick = { onOpenTrip(tripId) }) {
-            Text(if (phase == "assigned") "Review & accept" else "Open transfer", color = colors.secondary)
+            Text(if (phase == "assigned") "Review & accept" else "Open trip", color = colors.secondary)
         }
         if (stop != null) {
             TextButton(onClick = { onStartNavigation(tripId, stop) }, modifier = Modifier.align(Alignment.End)) {
@@ -274,8 +274,10 @@ private fun NextTransferCard(
 private fun SgrTodayPanel(now: Instant, schedule: TrainSchedule, onRefresh: () -> Unit) {
     val services = schedule.services.orEmpty()
     val today = now.atZone(SgrTimetable.zone).toLocalDate()
-    val upcoming = remember(services, now.epochSecond / 60) { SgrTimetable.upcoming(services, now) }
-    val next = upcoming.filter { it.at >= now }.take(3)
+    val upcoming = remember(services, today) { SgrTimetable.upcoming(services, now) }
+    val next = SgrTimetable.Movement.entries.mapNotNull { movement ->
+        upcoming.firstOrNull { it.at >= now && it.service.movement == movement }
+    }.sortedBy { it.at }
     var fullTimetable by rememberSaveable { mutableStateOf(false) }
     val colors = MaterialTheme.colorScheme
     Surface(shape = MaterialTheme.shapes.medium, color = colors.surfaceContainerLow) {
@@ -300,7 +302,6 @@ private fun SgrTodayPanel(now: Instant, schedule: TrainSchedule, onRefresh: () -
             }
             if (schedule.services?.isEmpty() == true) DepartureNote("No scheduled services.")
             next.forEach { event ->
-                HorizontalDivider(color = colors.outlineVariant)
                 TrainTimeRow(event, event.at.atZone(SgrTimetable.zone).toLocalDate() != today)
             }
         }
@@ -452,13 +453,13 @@ internal fun DriverHomeDashboard(
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(MireliDesign.Space.md)) {
         val now = rememberNow(15_000L)
         DriverIdentity(name, verified, hour = now.atZone(NairobiZone).hour)
+        if (showLocationPreview) HomeLocationPreview(onOpenMap)
         if (renewalNote != null) {
             DepartureNote(renewalNote)
             TextButton(onClick = onOpenAccount) { Text("Renew documents") }
         }
         if (!eligible) {
             if (renewalNote == null) ApplicationPanel(applicationStatus, onOpenAccount, onRefresh)
-            if (showLocationPreview) HomeLocationPreview(onOpenMap)
             SgrTodayPanel(now, schedule, onRefreshTimetable)
             return@Column
         }
@@ -470,9 +471,10 @@ internal fun DriverHomeDashboard(
         if (nextTrip != null) {
             NextTransferCard(nextTrip, now, nextTrip.primaryNavigationStop(), onStartNavigation, onOpenTrip)
         } else if (tripsCurrent) {
-            Text("No assignments", style = MaterialTheme.typography.headlineSmall)
+            Text("No assignments", style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        if (showLocationPreview) HomeLocationPreview(onOpenMap)
+        SgrTodayPanel(now, schedule, onRefreshTimetable)
         if (nextTrip != null) {
             val localDate = now.atZone(NairobiZone).toLocalDate()
             val later = currentTrips.filter { trip ->
@@ -502,7 +504,6 @@ internal fun DriverHomeDashboard(
                 )
             }
         }
-        SgrTodayPanel(now, schedule, onRefreshTimetable)
     }
 }
 

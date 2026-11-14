@@ -9,6 +9,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import com.mireli.driver.ui.DepartureSettlement
 import com.mireli.driver.ui.DriverDocumentRow
 import com.mireli.driver.ui.EarningsOverview
+import com.mireli.driver.domain.StatementPeriod
 import com.mireli.driver.ui.DocumentSelectionDialog
 import com.mireli.driver.ui.DriverIdentity
 import com.mireli.driver.ui.DriverHomeDashboard
@@ -101,11 +102,14 @@ class DeparturePagesTest {
     @Test fun earningsSummaryHidesAmountAndOpensRealShortcuts() {
         val hidden = mutableStateOf(false)
         var destination = ""
+        val period = mutableStateOf(StatementPeriod.All)
         rule.setContent {
             MireliTheme {
                 EarningsOverview(
                     paid = if (hidden.value) "KSh ••••" else "KSh 2,450",
                     hidden = hidden.value,
+                    period = period.value,
+                    onPeriodChange = { period.value = it },
                     onToggleBalance = { hidden.value = !hidden.value },
                     onPayoutDetails = { destination = "payout" },
                     onPayoutSupport = { destination = "help" },
@@ -117,6 +121,8 @@ class DeparturePagesTest {
         rule.onNodeWithText("KSh 2,450").assertDoesNotExist()
         rule.onNodeWithText("KSh ••••").assertIsDisplayed()
         rule.onNodeWithText("Trip history").assertDoesNotExist()
+        rule.onNodeWithText("This month").performClick()
+        assertEquals(StatementPeriod.Month, period.value)
         for ((label, target) in listOf("M-Pesa" to "payout", "Payout help" to "help")) {
             rule.onNodeWithText(label).performClick()
             assertEquals(target, destination)
@@ -129,7 +135,7 @@ class DeparturePagesTest {
         val hidden = mutableStateOf(false)
         rule.setContent { MireliTheme { Surface { Column { DepartureSettlement(line, hidden.value) } } } }
         rule.onNodeWithText("Paid").assertIsDisplayed()
-        rule.onNodeWithText("Nyali transfer").performClick()
+        rule.onNodeWithText("M-Pesa settlement").performClick()
         rule.onNodeWithText("Gross").assertIsDisplayed()
         rule.runOnIdle { hidden.value = true }
         rule.onAllNodesWithText("KSh ••••").assertCountEquals(4)

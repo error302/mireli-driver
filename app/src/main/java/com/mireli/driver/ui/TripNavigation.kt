@@ -24,6 +24,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -41,9 +42,9 @@ import com.mireli.driver.domain.NavigationStop
 import com.mireli.driver.domain.RouteManeuver
 import com.mireli.driver.domain.bearingBetween
 import com.mireli.driver.domain.distanceMeters
+import com.mireli.driver.domain.estimatedRemainingSeconds
 import com.mireli.driver.domain.nearestRoutePointIndex
 import com.mireli.driver.domain.remainingDistanceMeters
-import com.mireli.driver.domain.remainingDurationSeconds
 import kotlinx.coroutines.delay
 import org.json.JSONObject
 import org.maplibre.android.MapLibre
@@ -119,7 +120,8 @@ internal fun openMaps(context:Context,url:String):Boolean {
 }
 
 @Composable fun TripNavigation(trip:JSONObject,onNavigate:((String)->Boolean)?=null,onRequestRoute:RouteRequest?=null,
-    onStartNavigation: ((NavigationStop) -> Unit)? = null) {
+    onStartNavigation: ((NavigationStop) -> Unit)? = null,
+    compact: Boolean = false, seatsWaiting: Int? = null, enabled: Boolean = true) {
     val context=LocalContext.current
     val lifecycleOwner=LocalLifecycleOwner.current
     val tripId=trip.getString("id")
@@ -157,7 +159,8 @@ internal fun openMaps(context:Context,url:String):Boolean {
     val stops = trip.navigationStops()
     val phase = trip.optString("phase")
     val direction = trip.optString("direction")
-    val defaultTarget = trip.primaryNavigationStop(stops)
+    val defaultTarget = trip.primaryNavigationStop(stops) ?: if (compact && phase == "assigned")
+        DriverNavigation.primaryStop(stops, direction, "accepted", trip.bookedStageIds(), trip.hasDoorAddress()) else null
     var selectedStopId by rememberSaveable(tripId, phase, defaultTarget?.id){mutableStateOf(defaultTarget?.id)}
     LaunchedEffect(tripId,selectedStopId) {
         route = null; routeError = null; offRouteSamples = 0; lastRouteRequest = 0L
@@ -173,8 +176,8 @@ internal fun openMaps(context:Context,url:String):Boolean {
     val hasLocationPermission=context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED||
         context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION)==PackageManager.PERMISSION_GRANTED
 
-    DisposableEffect(tripId,navigating,hasLocationPermission,routingAvailable) {
-        if(!routingAvailable||!navigating||!hasLocationPermission){onDispose{} } else {
+    DisposableEffect(tripId,navigating,hasLocationPermission,routingAvailable,enabled) {
+        if(!enabled||!routingAvailable||!navigating||!hasLocationPermission){onDispose{} } else {
             val manager=context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
             var listening=false
             val listener=object:LocationListener {
@@ -224,9 +227,9 @@ internal fun openMaps(context:Context,url:String):Boolean {
 
     val accuracy = locationFix?.takeIf { it.hasAccuracy() }?.accuracy
     val usableGuidanceFix = currentLocation != null && accuracy != null && accuracy <= GUIDANCE_ACCURACY_METRES
-    LaunchedEffect(navigating,locationFix,currentLocation,route,target?.id,routeRequestRevision) {
+    LaunchedEffect(enabled,navigating,locationFix,currentLocation,route,target?.id,routeRequestRevision) {
         val point=currentLocation;val stop=target
-        if(!navigating||point==null||stop==null||routeLoading||accuracy==null||accuracy>ROUTE_ORIGIN_ACCURACY_METRES)return@LaunchedEffect
+        if(!enabled||!navigating||point==null||stop==null||routeLoading||accuracy==null||accuracy>ROUTE_ORIGIN_ACCURACY_METRES)return@LaunchedEffect
         val currentRoute=route
         val offRoute=currentRoute?.let{distanceMeters(point,it.geometry[nearestRoutePointIndex(it,point)])}?:Double.MAX_VALUE
         offRouteSamples=if(currentRoute!=null && usableGuidanceFix && offRoute>120.0+accuracy)offRouteSamples+1 else 0
@@ -237,7 +240,7 @@ internal fun openMaps(context:Context,url:String):Boolean {
             if(request==null)return@LaunchedEffect
             val revision = routeRequestRevision
             routeLoading=true;routeError=null;lastRouteRequest=now
-            request(tripId,stop.id,point,false){result->
+            request(tripId,stop.id,point,compact){result->
                 if (revision != routeRequestRevision) return@request
                 if(routingAvailable&&navigating&&selectedStopId==stop.id) {
                     result.onSuccess {json->
@@ -250,20 +253,59 @@ internal fun openMaps(context:Context,url:String):Boolean {
         }
     }
 
-    val nearest=route?.let{currentLocation?.takeIf { usableGuidanceFix }?.let{point->nearestRoutePointIndex(it,point)}}
+    val nearest = route?.let { planned ->
+        currentLocation?.takeIf { usableGuidanceFix }?.let { point ->
+            nearestRoutePointIndex(planned, point).takeUnless { index ->
+                compact && distanceMeters(point, planned.geometry[index]) > 120.0 + (accuracy ?: 0f)
+            }
+        }
+    }
     val nextManeuver=nearest?.let{index->route?.let{activeRoute->activeRoute.maneuvers.firstOrNull{it.endShapeIndex>index}?:activeRoute.maneuvers.lastOrNull()}}
     val maneuverDistance=route?.let{activeRoute->currentLocation?.let{point->
         nextManeuver?.let{step->activeRoute.geometry.getOrNull(step.endShapeIndex)?.let{distanceMeters(point,it).toInt()}}
     }}
-    val remaining=route?.let{activeRoute->nearest?.let{remainingDurationSeconds(activeRoute,it)}}
+    val remaining = route?.let { activeRoute -> nearest?.let { estimatedRemainingSeconds(activeRoute, it) } }
     val eta=remaining?.let{seconds->DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.of("Africa/Nairobi")).format(Instant.now().plusSeconds(seconds.toLong()))}
     val distanceLeft=route?.let{activeRoute->nearest?.let{remainingDistanceMeters(activeRoute,it)}}
     val atStop = accuracy != null && currentLocation != null && target != null &&
         distanceMeters(currentLocation, GeoPoint(target.latitude, target.longitude)) + accuracy < 35.0
 
-    HorizontalDivider()
-    Text("Navigation",style=MaterialTheme.typography.titleMedium)
+    if (!compact) {
+        HorizontalDivider()
+        Text("Navigation", style = MaterialTheme.typography.titleMedium)
+    }
+    if (compact) {
+        val label = if (phase == "in_progress") "Drop-off" else "Pickup"
+        val detail = target?.let { if (it.id == defaultTarget?.id) "$label · ${it.name}" else "Selected stop · ${it.name}" }
+        Text(detail ?: "Choose the next stop", color = MaterialTheme.colorScheme.secondary,
+            style = MaterialTheme.typography.titleSmall)
+    }
     if(target!=null) {
+        if (compact) {
+            if (enabled) NavigationMap(target, currentLocation, locationFix, route,
+                Modifier.fillMaxWidth().height(208.dp).clip(MaterialTheme.shapes.medium),
+                interactive = false, controls = false)
+            TripMetrics(eta, distanceLeft, seatsWaiting)
+            if (enabled && routingAvailable && phase != "assigned") {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(MireliDesign.Space.xs)) {
+                    if (!navigating) TextButton(onClick = { disclosure = true },
+                        modifier = Modifier.heightIn(min = MireliDesign.TouchTarget)) {
+                        Text("Show route", color = MaterialTheme.colorScheme.secondary)
+                    }
+                    if (onStartNavigation != null) TextButton(onClick = { onStartNavigation(target) },
+                        modifier = Modifier.heightIn(min = MireliDesign.TouchTarget)) {
+                        Text("Open navigation", color = MaterialTheme.colorScheme.secondary)
+                    }
+                }
+            }
+            if (enabled && routeLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
+            if (enabled && navigating) {
+                (routeError ?: locationError)?.let { DepartureNote(it) }
+                if (routeError != null) TextButton(onClick = { lastRouteRequest = 0L; routeRequestRevision++ }) {
+                    Text("Retry route", color = MaterialTheme.colorScheme.secondary)
+                }
+            }
+        } else {
         Text(if(phase=="in_progress")"Route destination · ${target.name}" else "Route pickup · ${target.name}")
         NavigationMap(target,currentLocation,locationFix,route,Modifier.fillMaxWidth().height(300.dp))
         Text("© OpenStreetMap contributors · OpenFreeMap",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
@@ -296,14 +338,20 @@ internal fun openMaps(context:Context,url:String):Boolean {
             locationError?.let{Text(it,color=MaterialTheme.colorScheme.onSurfaceVariant,style=MaterialTheme.typography.bodySmall)}
             routeError?.let{Text(it,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)}
         }
-        TextButton(onClick={DriverNavigation.directions(target)?.let{failed=!navigate(it)}},modifier=Modifier.fillMaxWidth()) {
-            Text("Open ${if(phase=="in_progress")"destination" else "pickup"} in Google Maps")
+        }
+        if (enabled && (!compact || phase != "assigned" && (!routingAvailable || routeError != null))) TextButton(onClick={DriverNavigation.directions(target, avoidFerries = compact)?.let{failed=!navigate(it)}},
+            modifier=if (compact) Modifier.heightIn(min = MireliDesign.TouchTarget) else Modifier.fillMaxWidth()) {
+            Text("Open ${if(phase=="in_progress")"destination" else "pickup"} in Google Maps",
+                color = MaterialTheme.colorScheme.secondary)
         }
         if(failed)Text("No maps app or browser could open. Install one and try again.",color=MaterialTheme.colorScheme.error)
-    } else Text("Confirm the next pickup or drop-off in the manifest, then select the correct stop. Contact dispatch if the location is unclear.")
+    } else {
+        if (compact) TripMetrics(eta = null, distance = null, seats = seatsWaiting)
+        if (!compact) DepartureNote("Choose a route stop or check the passenger manifest.")
+    }
 
     val validStops = ordered.filter { it.valid }
-    if (validStops.size > 1 || (target == null && validStops.isNotEmpty())) {
+    if (enabled && (validStops.size > 1 || (target == null && validStops.isNotEmpty()))) {
         Text("Route stops", style = MaterialTheme.typography.labelLarge)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(validStops, key = { it.id }) { stop ->
@@ -312,12 +360,33 @@ internal fun openMaps(context:Context,url:String):Boolean {
         }
     }
 
-    if(disclosure&&routingAvailable)AlertDialog(onDismissRequest={disclosure=false},title={Text("Allow location for navigation")},
+    if(enabled&&disclosure&&routingAvailable)AlertDialog(onDismissRequest={disclosure=false},title={Text("Allow location for navigation")},
         text={Text("Mireli uses your device location to show your position on the map and calculate directions to the selected trip stop. Your location is sent to Mireli’s routing service only when requesting or recalculating a route. The app does not request background location permission." )},
         confirmButton={TextButton(onClick={
             disclosure=false
             if(hasLocationPermission)navigating=true else permissions.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION))
         }){Text("Continue")}},dismissButton={TextButton(onClick={disclosure=false}){Text("Cancel")}})
+}
+
+@Composable
+private fun TripMetrics(eta: String?, distance: Int?, seats: Int?) {
+    val colors = MaterialTheme.colorScheme
+    val values = listOf(
+        "ETA · EAT" to (eta ?: "—"),
+        "Remaining" to (distance?.let(::distanceLabel) ?: "—"),
+        "To board" to (seats?.toString() ?: "—"),
+    )
+    Surface(color = colors.surfaceContainerLow, shape = MaterialTheme.shapes.small) {
+        Row(Modifier.fillMaxWidth().padding(MireliDesign.Space.sm),
+            horizontalArrangement = Arrangement.spacedBy(MireliDesign.Space.xs)) {
+            values.forEach { (label, value) ->
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(MireliDesign.Space.xxs)) {
+                    Text(label, style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
+                    Text(value, style = MaterialTheme.typography.drivingMetric)
+                }
+            }
+        }
+    }
 }
 
 @Composable private fun ManeuverCard(maneuver:RouteManeuver,distance:Int?) {

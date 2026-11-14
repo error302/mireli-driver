@@ -169,7 +169,7 @@ internal fun DepartureSettlement(line: JSONObject, hideBalance: Boolean, modifie
     val date = stamp?.let { runCatching { SettlementDate.format(Instant.parse(it)) }.getOrNull() }
     val summary = listOfNotNull(status.settlementLabel(), date).joinToString(" · ")
     DepartureDisclosure(
-        line.getString("routeName"),
+        if (status == "completed") "M-Pesa settlement" else "Trip settlement",
         summary = summary,
         modifier = modifier,
         trailing = {

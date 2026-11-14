@@ -46,7 +46,7 @@ internal fun JSONObject.navigationStops(): List<NavigationStop> {
 }
 
 private fun JSONObject.passengerManifest(): List<JSONObject> {
-    val passengers = optJSONArray("passengers") ?: return emptyList()
+    val passengers = optJSONArray("offlineSeatCounts") ?: optJSONArray("passengers") ?: return emptyList()
     return (0 until passengers.length()).mapNotNull(passengers::optJSONObject)
 }
 

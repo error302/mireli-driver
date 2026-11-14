@@ -13,6 +13,9 @@ import com.mireli.driver.domain.SgrTimetable
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import org.json.JSONArray
 import org.json.JSONObject
 
 private const val DEFAULT_SUPPORT_EMAIL = "mirelisgr001@gmail.com"
@@ -42,6 +45,7 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
     private var driverId:String?=null
     private var driverEntryIntent = false
     private var workGeneration = 0L
+    private val tripCacheLock = Mutex()
     private var supportRequest:Pair<String,String>?=null
     private val mutable=MutableStateFlow(DriverServiceState())
     private val starting = MutableStateFlow(true)
@@ -106,7 +110,22 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
 
     init {viewModelScope.launch {
         session=withContext(Dispatchers.IO){sessions.load()}
-        mutable.value=DriverServiceState(signedIn=session!=null)
+        val cached = session?.let { activeSession ->
+            withContext(Dispatchers.IO) {
+                sessions.savedTrip(activeSession)?.let { snapshot ->
+                    val id = snapshot.getString("driverId")
+                    val pending = runCatching { sessions.savedAction(id) != null }.getOrDefault(false)
+                    snapshot to pending
+                }
+            }
+        }
+        val cachedTrip = cached?.first
+        driverId = cachedTrip?.optString("driverId")
+        mutable.value = DriverServiceState(
+            signedIn = session != null,
+            trips = cachedTrip?.let { JSONObject().put("trips", JSONArray().put(it.getJSONObject("trip"))).put("cached", true) },
+            pendingTripAction = cached?.second == true,
+        )
         runWork {
             try {
                 serviceStatus()
@@ -198,7 +217,7 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
 
         var failure: Exception? = null
         coroutineScope {
-            fun loadSection(path: String, apply: (JSONObject) -> Unit) = launch {
+            fun loadSection(path: String, apply: suspend (JSONObject) -> Unit) = launch {
                 try {
                     apply(api.request(path, token = token))
                 } catch (cancelled: CancellationException) {
@@ -212,7 +231,7 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
                     }
                 }
             }
-            loadSection("/trips", ::applyAssignments)
+            loadSection("/trips") { response -> applyAssignments(response, accountId) }
             loadSection("/onboarding") { mutable.value = mutable.value.copy(onboarding = it) }
             loadSection("/support") { mutable.value = mutable.value.copy(support = it) }
             loadSection("/earnings") { statement ->
@@ -223,18 +242,24 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
         failure?.let { throw it }
     }
 
-    private fun applyAssignments(response: JSONObject) {
-        response.getJSONArray("trips")
-        mutable.value = mutable.value.copy(
-            eligibility = response.getJSONObject("eligibility"),
-            trips = response,
-            tripDataCurrent = true
-        )
+    private suspend fun applyAssignments(response: JSONObject, accountId: String, isCurrent: () -> Boolean = { true }) {
+        val activeSession = session ?: return
+        val eligibility = response.getJSONObject("eligibility")
+        val snapshot = response.getJSONArray("trips").activeTripSnapshot(accountId)
+        tripCacheLock.withLock {
+            if (!isCurrent() || session !== activeSession) return
+            // A local cache failure does not invalidate the server's assignments.
+            withContext(Dispatchers.IO) { runCatching { sessions.saveTrip(activeSession, snapshot) } }
+            if (isCurrent() && session === activeSession) {
+                mutable.value = mutable.value.copy(eligibility = eligibility, trips = response, tripDataCurrent = true)
+            }
+        }
     }
 
     suspend fun refreshAssignments() {
         val activeSession = session ?: return
-        if (driverId == null || mutable.value.loading || mutable.value.emailSignInOpen == null) return
+        val accountId = driverId ?: return
+        if (mutable.value.loading || mutable.value.emailSignInOpen == null) return
         val generation = workGeneration
 
         // A completed command, sign-out or manual refresh takes precedence
@@ -242,7 +267,7 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
         fun stillCurrent() = session === activeSession && generation == workGeneration
         try {
             val response = api.request("/trips", token = activeSession.token)
-            if (stillCurrent()) applyAssignments(response)
+            if (stillCurrent()) applyAssignments(response, accountId, ::stillCurrent)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
@@ -266,6 +291,23 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
         serviceStatus()
         loadAccount()
     }
+    fun loadEarlierEarnings() = work {
+        val statement = mutable.value.earnings ?: return@work
+        val cursor = statement.opt("nextCursor") as? String ?: return@work
+        val activeSession = session ?: return@work
+        val page = api.request("/earnings?cursor=${Uri.encode(cursor)}", token = activeSession.token)
+        require(page.getString("currency") == "KES" && page.getString("unit") == "minor")
+        val combined = JSONArray()
+        val seen = mutableSetOf<String>()
+        listOf(statement.getJSONArray("lines"), page.getJSONArray("lines")).forEach { rows ->
+            for (index in 0 until rows.length()) {
+                val line = rows.getJSONObject(index)
+                if (seen.add(line.getString("id"))) combined.put(line)
+            }
+        }
+        mutable.value = mutable.value.copy(earnings = page.put("lines", combined))
+    }
+
     fun payoutDestination(name:String,mpesaNumber:String="")=work {
         val version=mutable.value.earnings?.getJSONObject("destination")?.getInt("version")?:return@work
         val body=JSONObject().put("expectedVersion",version).put("accountName",name.trim()).put("acknowledged",true)
@@ -421,8 +463,8 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
         clearSession(if (revoked) null else "Signed out on this phone. Server revocation could not be confirmed; the session still has its expiry limit.")
     }
     private suspend fun clearSession(message: String?) {
-        withContext(Dispatchers.IO) { sessions.clear() }
         session = null
+        tripCacheLock.withLock { withContext(Dispatchers.IO) { sessions.clear() } }
         photo.value = DriverPhoto()
         driverId = null
         supportRequest = null
