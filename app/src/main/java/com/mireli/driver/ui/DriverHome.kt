@@ -172,12 +172,25 @@ internal fun DriverHomeTopBar(onSupport: () -> Unit) {
 }
 
 @Composable
-internal fun DriverIdentity(name: String?, verified: Boolean, prominent: Boolean = false) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        DriverAvatar(name, size = if (prominent) 48.dp else 32.dp)
-        Text(name ?: "Driver", modifier = Modifier.weight(1f, fill = false),
-            style = if (prominent) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleMedium)
-        if (verified) VerifiedBadge(verified = true, compact = true)
+internal fun DriverIdentity(name: String?, verified: Boolean, hour: Int) {
+    val greeting = when (hour) {
+        in 5..11 -> "Good morning"
+        in 12..16 -> "Good afternoon"
+        else -> "Good evening"
+    }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        DriverAvatar(name, size = 40.dp)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(greeting, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(name ?: "Driver", modifier = Modifier.weight(1f, fill = false),
+                    style = MaterialTheme.typography.titleMedium)
+                if (verified) VerifiedBadge(verified = true, compact = true)
+            }
+            Text("Let’s start earning!", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 
@@ -438,12 +451,12 @@ internal fun DriverHomeDashboard(
     onRefreshTimetable: () -> Unit = {}
 ) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(MireliDesign.Space.md)) {
-        DriverIdentity(name, verified)
+        val now = rememberNow(15_000L)
+        DriverIdentity(name, verified, hour = now.atZone(NairobiZone).hour)
         if (renewalNote != null) {
             DepartureNote(renewalNote)
             TextButton(onClick = onOpenAccount) { Text("Renew documents") }
         }
-        val now = rememberNow(15_000L)
         if (!eligible) {
             if (renewalNote == null) ApplicationPanel(applicationStatus, onOpenAccount, onRefresh)
             if (showLocationPreview) HomeLocationPreview(onOpenMap)

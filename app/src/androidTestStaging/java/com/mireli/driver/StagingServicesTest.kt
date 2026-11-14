@@ -1,6 +1,7 @@
 package com.mireli.driver
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import com.mireli.driver.data.*
 import kotlinx.coroutines.runBlocking
@@ -127,8 +128,8 @@ class StagingServicesTest {
         assertEquals("Sample Native Driver",saved.getJSONObject("profile").getString("fullName"))
         assertEquals("Van",saved.getJSONObject("profile").getString("cabType"))
         awaitAction("Continue to documents")
-        rule.onNodeWithText("Continue to documents").performClick()
-        rule.waitUntil(30000) { rule.onAllNodesWithText("Step 2 of 3").fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithText("Continue to documents").assertIsEnabled().performSemanticsAction(SemanticsActions.OnClick)
+        reveal("Step 2 of 3")
         reveal("Continue to review")
         rule.onNodeWithText("Continue to review").assertIsNotEnabled()
         val evidence = runBlocking {
@@ -179,7 +180,15 @@ class StagingServicesTest {
         reveal("Open map")
         rule.onNodeWithText("Open map").assertExists()
         rule.onNodeWithTag("driver_service_list").performScrollToIndex(0)
-        if (captureDesign) screenshot("compact-home")
+        if (captureDesign) {
+            val arguments = InstrumentationRegistry.getArguments()
+            if (arguments.getString("waitForMapPosition") == "true") {
+                rule.waitUntil(25000) {
+                    rule.onAllNodesWithContentDescription("Current position").fetchSemanticsNodes().isNotEmpty()
+                }
+            }
+            screenshot("compact-home")
+        }
         rule.onNodeWithText("Earnings",useUnmergedTree=true).performClick()
         reveal("No settlement records yet.")
         rule.onNodeWithText("No settlement records yet.",substring=true).assertExists()

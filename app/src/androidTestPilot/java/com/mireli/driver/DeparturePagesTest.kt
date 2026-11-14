@@ -10,6 +10,7 @@ import com.mireli.driver.ui.DepartureSettlement
 import com.mireli.driver.ui.DriverDocumentRow
 import com.mireli.driver.ui.EarningsOverview
 import com.mireli.driver.ui.DocumentSelectionDialog
+import com.mireli.driver.ui.DriverIdentity
 import com.mireli.driver.ui.DriverHomeDashboard
 import com.mireli.driver.ui.MireliTheme
 import org.json.JSONObject
@@ -32,6 +33,21 @@ class DeparturePagesTest {
         rule.onNodeWithText("Your location").assertIsDisplayed()
         rule.onNodeWithText("Open map").performClick()
         assertEquals(true, opened)
+    }
+
+    @Test fun driverGreetingChangesAtTheDaypartBoundaries() {
+        val hour = mutableStateOf(5)
+        rule.setContent { MireliTheme { Surface {
+            DriverIdentity(name = "James Mwangi", verified = true, hour = hour.value)
+        } } }
+        listOf(5 to "Good morning", 11 to "Good morning", 12 to "Good afternoon",
+            16 to "Good afternoon", 17 to "Good evening", 23 to "Good evening",
+            0 to "Good evening", 4 to "Good evening").forEach { (time, greeting) ->
+            rule.runOnIdle { hour.value = time }
+            rule.onNodeWithText(greeting).assertIsDisplayed()
+            rule.onNodeWithText("James Mwangi").assertIsDisplayed()
+            rule.onNodeWithText("Let’s start earning!").assertIsDisplayed()
+        }
     }
 
     @Test fun documentRowRequiresAValidExpiryAndShowsAnInlineError() {
