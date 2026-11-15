@@ -19,7 +19,7 @@ import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 @Composable
-internal fun HomeLocationPreview(onOpenMap: () -> Unit, compact: Boolean = false) {
+internal fun HomeLocationPreview(onOpenMap: () -> Unit) {
     val context = LocalContext.current
     var granted by remember { mutableStateOf(locationPermissionGranted(context)) }
     val settings = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
@@ -40,7 +40,6 @@ internal fun HomeLocationPreview(onOpenMap: () -> Unit, compact: Boolean = false
         position = position,
         age = age,
         granted = granted,
-        compact = compact,
         onOpenMap = onOpenMap,
         onEnableLocation = {
             requestLocation.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
@@ -54,7 +53,6 @@ private fun HomeLocationCard(
     position: DriverPosition,
     age: Long?,
     granted: Boolean,
-    compact: Boolean = false,
     onOpenMap: () -> Unit,
     onEnableLocation: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -74,10 +72,9 @@ private fun HomeLocationCard(
                 location = position.point.takeIf { fix != null },
                 fix = fix,
                 route = null,
-                // With no active trip the map is the largest element on screen and the least
-                // actionable one. Collapse it to a single row so the timetable and application
-                // card get the space instead.
-                modifier = Modifier.fillMaxWidth().height(if (compact) 0.dp else 172.dp)
+                // The live map stays visible on Home — it is how a driver orients, not a
+                // placeholder to hide behind a single row.
+                modifier = Modifier.fillMaxWidth().height(172.dp)
                     .background(colors.surfaceContainer)
                     .clickable(onClickLabel = "Open live map", onClick = onOpenMap),
                 interactive = false,

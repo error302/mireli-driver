@@ -4,6 +4,7 @@ import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
@@ -16,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -176,8 +178,12 @@ private fun DriverAvatar(name: String?, photo: DriverPhoto? = null, size: Dp = 4
 @Composable
 internal fun DriverHomeTopBar(onSupport: () -> Unit) {
     DriverSectionHeader("Mireli Driver") {
-        IconButton(onClick = onSupport, modifier = Modifier.size(MireliDesign.TouchTarget)) {
-            Icon(MireliIcons.HeadsetMic, "Help and support", tint = MaterialTheme.colorScheme.secondary)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // Light/dark switch sits beside support on the home header.
+            ThemeIconButton(tint = MaterialTheme.colorScheme.secondary)
+            IconButton(onClick = onSupport, modifier = Modifier.size(MireliDesign.TouchTarget)) {
+                Icon(MireliIcons.HeadsetMic, "Help and support", tint = MaterialTheme.colorScheme.secondary)
+            }
         }
     }
 }
@@ -215,17 +221,26 @@ private fun ApplicationPanel(status: String?, onOpenAccount: () -> Unit, onRefre
         "suspended" -> "Driver account suspended"
         else -> "Check application status"
     }
-    DriverOverviewSurface {
-        Text(title, style = MaterialTheme.typography.titleMedium)
-        when (status) {
-            "draft" -> {
-                DepartureNote("Driver details and verification documents")
-                TextButton(onClick = onOpenAccount) {
-                    Text("Continue onboarding", color = MaterialTheme.colorScheme.secondary)
-                }
+    // The whole card is the control: a text link hidden inside a large surface is the
+    // thing drivers miss. The chevron keeps it visibly tappable.
+    val interaction = remember { MutableInteractionSource() }
+    val open = if (status == null) onRefresh else onOpenAccount
+    val actionLabel = when (status) {
+        null -> "Refresh account"
+        "draft" -> "Continue onboarding"
+        else -> "View application"
+    }
+    DriverOverviewSurface(
+        modifier = Modifier.pressScale(interaction).clickable(
+            interaction, ripple(), role = Role.Button, onClickLabel = actionLabel, onClick = open,
+        ),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(MireliDesign.Space.xs)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                if (status == "draft") DepartureNote("Driver details and verification documents")
             }
-            null -> TextButton(onClick = onRefresh) { Text("Refresh account", color = MaterialTheme.colorScheme.secondary) }
-            else -> TextButton(onClick = onOpenAccount) { Text("View application", color = MaterialTheme.colorScheme.secondary) }
+            Icon(MireliIcons.ChevronRight, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.secondary)
         }
     }
 }
@@ -466,7 +481,7 @@ internal fun DriverHomeDashboard(
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(MireliDesign.Space.md)) {
         val now = rememberNow(15_000L)
         DriverIdentity(name, verified, hour = now.atZone(NairobiZone).hour, photo = photo)
-        if (showLocationPreview) HomeLocationPreview(onOpenMap, compact = !eligible || trips.orEmpty().isEmpty())
+        if (showLocationPreview) HomeLocationPreview(onOpenMap)
         if (renewalNote != null) {
             DepartureNote(renewalNote)
             TextButton(onClick = onOpenAccount) { Text("Renew documents") }

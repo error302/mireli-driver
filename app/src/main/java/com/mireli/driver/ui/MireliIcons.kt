@@ -122,6 +122,9 @@ object MireliIcons {
 
     val Visibility by lazy { icon("Visibility", "M2,12C4,7 8,5 12,5C16,5 20,7 22,12C20,17 16,19 12,19C8,19 4,17 2,12Z M12,9A3,3 0,1 0,12,15A3,3 0,1 0,12,9") }
 
+    /** Camera, for setting the driver profile photo. */
+    val PhotoCamera by lazy { icon("PhotoCamera", "M4,8H7L8.5,5.5H15.5L17,8H20A1,1 0,0 1,21,9V18A1,1 0,0 1,20,19H4A1,1 0,0 1,3,18V9A1,1 0,0 1,4,8Z M12,9.8A3.2,3.2 0,1 0,12,16.2A3.2,3.2 0,1 0,12,9.8") }
+
     val VisibilityOff by lazy { icon("VisibilityOff", "M4,4L20,20 M9.9,5.2A7.6,7.6 0,0 1,12,5C16,5 20,7 22,12A13.2,13.2 0,0 1,18.6,16.2 M6.2,7.4A13.4,13.4 0,0 0,2,12C4,17 8,19 12,19C13.5,19 15,18.7 16.4,18.1 M9.9,9.9A3,3 0,0 0,14,14") }
 
     private fun icon(name: String, path: String) = ImageVector.Builder(

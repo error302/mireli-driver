@@ -6,7 +6,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -43,6 +45,9 @@ internal fun MireliDriverCard(
     }
     var confirmRemove by rememberSaveable { mutableStateOf(false) }
     val colors = MaterialTheme.colorScheme
+    val photoInteraction = remember { MutableInteractionSource() }
+    val photoEnabled = canChangePhoto && !photo.loading
+    val photoAction = if (image == null) "Add profile photo" else "Change profile photo"
 
     Column(
         Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium)
@@ -51,13 +56,37 @@ internal fun MireliDriverCard(
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(Modifier.size(48.dp).clip(MaterialTheme.shapes.small).background(colors.surfaceContainerHighest), contentAlignment = Alignment.Center) {
-                if (image != null) {
-                    Image(image, "Your profile photo", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                } else {
-                    val initials = name?.trim()?.split(Regex("""\s+"""))?.take(2)
-                        ?.joinToString("") { it.take(1).uppercase() } ?: "M"
-                    Text(initials, color = colors.onSurface, style = MaterialTheme.typography.titleLarge)
+            // The photo is set from the avatar itself — the natural target — rather
+            // than a text link under the name that nobody looks for.
+            Box(
+                Modifier.size(48.dp)
+                    .then(
+                        if (photoEnabled) Modifier.pressScale(photoInteraction)
+                            .clickable(photoInteraction, ripple(), role = Role.Button,
+                                onClickLabel = photoAction, onClick = onPickPhoto)
+                        else Modifier
+                    )
+                    .semantics { contentDescription = photoAction },
+            ) {
+                Box(
+                    Modifier.matchParentSize().clip(MaterialTheme.shapes.small)
+                        .background(colors.surfaceContainerHighest),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (image != null) {
+                        Image(image, "Your profile photo", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    } else {
+                        val initials = name?.trim()?.split(Regex("""\s+"""))?.take(2)
+                            ?.joinToString("") { it.take(1).uppercase() } ?: "M"
+                        Text(initials, color = colors.onSurface, style = MaterialTheme.typography.titleLarge)
+                    }
+                }
+                Box(
+                    Modifier.align(Alignment.BottomEnd).size(18.dp).clip(CircleShape)
+                        .background(colors.secondary),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(MireliIcons.PhotoCamera, null, Modifier.size(11.dp), tint = colors.onSecondary)
                 }
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -85,14 +114,11 @@ internal fun MireliDriverCard(
             Text(message, Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                 color = if (photo.failed) colors.error else colors.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
         }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (image != null) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val actions = ButtonDefaults.textButtonColors(contentColor = colors.secondary,
                 disabledContentColor = colors.onSurfaceVariant)
-            TextButton(onClick = onPickPhoto, enabled = canChangePhoto && !photo.loading, colors = actions) {
-                Text(if (image == null) "Add photo" else "Change photo", style = MaterialTheme.typography.titleSmall)
-            }
-            if (image != null) TextButton(
-                onClick = { confirmRemove = true }, enabled = canChangePhoto && !photo.loading, colors = actions
+            TextButton(
+                onClick = { confirmRemove = true }, enabled = photoEnabled, colors = actions
             ) { Text("Remove photo", style = MaterialTheme.typography.titleSmall) }
         }
     }

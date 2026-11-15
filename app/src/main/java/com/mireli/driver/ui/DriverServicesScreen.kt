@@ -16,6 +16,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
@@ -51,6 +53,23 @@ private enum class DriverEntry { Welcome, SignIn, Register }
 private fun policyLink(raw: String): String? = runCatching {
     URI(raw).takeIf { it.scheme == "https" && it.host != null && it.userInfo == null }?.toASCIIString()
 }.getOrNull()
+
+/**
+ * The checklist bar measures uploads; the application status measures review. Saying only
+ * "7 of 7 ... on file" next to "Application draft" read as a contradiction — a full bar
+ * with a draft label. This states both facts so the next step is unambiguous.
+ */
+private fun checklistLabel(onFile: Int, requiredTotal: Int, applicationStatus: String): String {
+    val uploaded = "$onFile of $requiredTotal required documents uploaded"
+    if (requiredTotal == 0) return uploaded
+    return when {
+        applicationStatus == "approved" -> "$uploaded · approved"
+        applicationStatus == "submitted" -> "$uploaded · awaiting Mireli review"
+        onFile == requiredTotal -> "$uploaded · not submitted yet"
+        else -> uploaded
+    }
+}
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable fun DriverServicesScreen(onClose:(()->Unit)?=null,vm:DriverServicesViewModel=viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
     val starting by vm.startupLoading.collectAsStateWithLifecycle()
@@ -321,7 +340,16 @@ private fun policyLink(raw: String): String? = runCatching {
             }
         },
     ) { padding ->
-        LazyColumn(Modifier.fillMaxSize().padding(padding).imePadding().testTag("driver_service_list"),state=listState,contentPadding=PaddingValues(start=MireliDesign.Space.md,end=MireliDesign.Space.md,top=MireliDesign.Space.md,bottom=MireliDesign.Space.md + 24.dp),verticalArrangement=Arrangement.spacedBy(if (guidedApplication) MireliDesign.Space.md else MireliDesign.Space.sm)) {
+        // Swipe down to refresh, replacing the toolbar refresh button. The spinner is
+        // driven by the same reload completing (state.loading true -> false).
+        var refreshing by remember { mutableStateOf(false) }
+        LaunchedEffect(state.loading) { if (refreshing && !state.loading) refreshing = false }
+        PullToRefreshBox(
+            isRefreshing = refreshing,
+            onRefresh = { if (!refreshing) { refreshing = true; vm.refresh(); vm.loadProfilePhoto() } },
+            modifier = Modifier.fillMaxSize().padding(padding),
+        ) {
+        LazyColumn(Modifier.fillMaxSize().imePadding().testTag("driver_service_list"),state=listState,contentPadding=PaddingValues(start=MireliDesign.Space.md,end=MireliDesign.Space.md,top=MireliDesign.Space.md,bottom=MireliDesign.Space.md + 24.dp),verticalArrangement=Arrangement.spacedBy(if (guidedApplication) MireliDesign.Space.md else MireliDesign.Space.sm)) {
             if(section==4)item { DriverHomeTopBar(onSupport = { section = 2 }) }
             if (guidedApplication) item {
                 DeparturePageTitle("Driver application",
@@ -331,12 +359,8 @@ private fun policyLink(raw: String): String? = runCatching {
                 }
             }
             if(section==0 && !guidedApplication)item {
-                DriverSectionHeader("Account") {
-                    IconButton(onClick = { vm.refresh(); vm.loadProfilePhoto() }, enabled = !state.loading,
-                        modifier = Modifier.size(MireliDesign.TouchTarget)) {
-                        Icon(MireliIcons.Refresh, "Refresh account", tint = MaterialTheme.colorScheme.secondary)
-                    }
-                }
+                // Refresh is swipe-down; the light/dark switch now lives on the Home header.
+                DriverSectionHeader("Account")
             }
             if (section == 1) item { DriverSectionHeader("Earnings") }
             if(section==3)item {
@@ -453,11 +477,14 @@ private fun policyLink(raw: String): String? = runCatching {
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 DepartureSection("Verification checklist")
                                 if (required.isNotEmpty()) {
-                                    Text("$onFile of ${required.size} required documents on file",
+                                    Text(checklistLabel(onFile, required.size, applicationStatus),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     LinearProgressIndicator(progress = { onFile.toFloat() / required.size },
                                         modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    if (onFile == required.size && applicationStatus == "draft") {
+                                        DepartureNote("All documents are uploaded. Submit for review to finish your application.")
+                                    }
                                 }
                                 if (guidedApplication || expandedDocumentGroup != null) {
                                     DepartureNote("PDF, JPG or PNG · up to ${documentLimit / (1024 * 1024)} MB")
@@ -512,7 +539,7 @@ private fun policyLink(raw: String): String? = runCatching {
                         DepartureSection("Submit for review")
                         if (guidedApplication) {
                             DepartureNote("${profile.optString("fullName")} · ${profile.optString("plate")}")
-                            DepartureNote("$onFile of ${required.size} required documents on file")
+                            DepartureNote(checklistLabel(onFile, required.size, applicationStatus))
                         }
                         listOf("Driver terms" to termsLink, "Privacy notice" to privacyLink).forEach { (label, url) ->
                             if (url != null) TextButton(onClick={policyLinkError = runCatching { uriHandler.openUri(url) }.isFailure},
@@ -680,7 +707,6 @@ private fun policyLink(raw: String): String? = runCatching {
                     Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
                         DepartureSection("Settings")
                         DriverActionTile("Driver support","",MireliIcons.HeadsetMic) { section=2 }
-                        AppearanceToggle(showSettings=true)
                     }
                 }
                 if(section==0 && !guidedApplication)item {
@@ -698,6 +724,7 @@ private fun policyLink(raw: String): String? = runCatching {
                     TextButton(onClick={com.mireli.driver.service.TripTracking.stop(trackingContext);vm.signOut()},
                         enabled=!state.loading,colors=ButtonDefaults.textButtonColors(contentColor=MaterialTheme.colorScheme.error)) { Text("Sign out") }
                 }
+        }
         }
     }
     val payoutStatement = state.earnings
