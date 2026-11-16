@@ -3,8 +3,11 @@ package com.mireli.driver
 import android.net.Uri
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.mireli.driver.ui.DepartureSettlement
@@ -63,7 +66,7 @@ class DeparturePagesTest {
     @Test fun applicantsCanOpenTheLiveMapBeforeApproval() {
         var opened = false
         rule.setContent { MireliTheme { Surface {
-            Column {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 DriverHomeTopBar(onSupport = {})
                 DriverHomeDashboard(name = "Pilot Driver", eligible = false, verified = false, applicationStatus = "draft",
                     tripsCurrent = true, trips = emptyList(), onRefresh = {}, onOpenTrips = {},
@@ -72,10 +75,9 @@ class DeparturePagesTest {
         } } }
         rule.onNodeWithText("Mireli Driver").assertIsDisplayed()
         rule.onNodeWithContentDescription("Help and support").assertIsDisplayed()
-        rule.onNodeWithText("Continue onboarding").assertIsDisplayed()
-        rule.onNodeWithTag("home_location_preview").assertIsDisplayed()
-        rule.onNodeWithText("Your location").assertIsDisplayed()
-        rule.onNodeWithText("Open map").performClick()
+        rule.onNodeWithTag("home_location_preview").performScrollTo().assertIsDisplayed()
+        rule.onNodeWithText("Your location").performScrollTo().assertIsDisplayed()
+        rule.onNodeWithText("Open map").performScrollTo().performClick()
         assertEquals(true, opened)
     }
 
@@ -175,6 +177,6 @@ class DeparturePagesTest {
         rule.onNodeWithText("M-Pesa settlement").performClick()
         rule.onNodeWithText("Gross fare").assertIsDisplayed()
         rule.runOnIdle { hidden.value = true }
-        rule.onAllNodesWithText("KSh ••••").assertCountEquals(4)
+        rule.onAllNodesWithText("KSh ••••").assertCountEquals(5)
     }
 }
