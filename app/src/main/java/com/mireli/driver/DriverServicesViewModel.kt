@@ -387,21 +387,25 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
         mutable.value = mutable.value.copy(earnings = merged)
     }
 
-    fun payoutDestination(name:String,mpesaNumber:String="")=work {
+    fun payoutDestination(name: String, mpesaNumber: String, expectedVersion: Int, onSaved: () -> Unit) = work {
         if (mutable.value.earnings?.optBoolean("payoutDestinationPhoneEditable") != true) {
-            throw DriverServiceException(503, "Payout number updates are unavailable. Contact support for help.")
+            throw DriverServiceException(503, "Mireli’s payout service cannot save a new number yet.")
         }
-        val version=mutable.value.earnings?.getJSONObject("destination")?.getInt("version")?:return@work
-        val body=JSONObject().put("expectedVersion",version).put("accountName",name.trim()).put("acknowledged",true)
-        // Sent only when the driver attached a number. Older services ignore the field;
-        // Daraja-ready services persist it as the disbursement destination.
-        if (mpesaNumber.isNotBlank()) {
-            val phone = com.mireli.driver.domain.OnboardingPolicy.normalizePhone(mpesaNumber)
-                ?: throw DriverServiceException(400, "Use a Kenyan mobile number.")
-            body.put("phoneNumber", phone)
+        val token = session?.token ?: return@work
+        val phone = com.mireli.driver.domain.OnboardingPolicy.normalizePhone(mpesaNumber)
+            ?: throw DriverServiceException(400, "Use a Kenyan mobile number.")
+        val body = JSONObject().put("expectedVersion", expectedVersion).put("accountName", name.trim())
+            .put("phoneNumber", phone).put("acknowledged", true)
+        try {
+            api.request("/payout-destination", "POST", token, json = body)
+        } catch (error: DriverServiceException) {
+            if (error.code == "DESTINATION_CHANGED") {
+                applyEarnings(api.request("/earnings", token = token))
+            }
+            throw error
         }
-        api.request("/payout-destination","POST",session?.token,json=body)
-        loadAccount()
+        onSaved()
+        applyEarnings(api.request("/earnings", token = token))
     }
     fun tripCommand(trip:JSONObject,action:String,details:JSONObject=JSONObject())=work {
         val id=driverId?:throw DriverServiceException(401,"Sign in again.")

@@ -82,8 +82,6 @@ private fun checklistLabel(onFile: Int, requiredTotal: Int, applicationStatus: S
     var entry by rememberSaveable { mutableStateOf(DriverEntry.Welcome) }
     var email by rememberSaveable {mutableStateOf("")};var code by remember {mutableStateOf("")}
     var section by rememberSaveable {mutableIntStateOf(4)};var accepted by rememberSaveable {mutableStateOf(false)}
-    var payoutName by remember {mutableStateOf("")};var payoutAcknowledged by remember {mutableStateOf(false)}
-    var payoutPhone by rememberSaveable {mutableStateOf("")}
     var tripHistory by rememberSaveable {mutableStateOf(false)}
     var highlightedTripId by rememberSaveable { mutableStateOf<String?>(null) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -142,7 +140,7 @@ private fun checklistLabel(onFile: Int, requiredTotal: Int, applicationStatus: S
             entry = DriverEntry.Welcome
         }
         if(previouslySignedIn && !state.signedIn) {
-            email="";code="";payoutName="";payoutAcknowledged=false
+            email="";code=""
             accepted=false;selectedType=null;selectedExpiry="";selectedFile=null;removeDocumentId=null;tripHistory=false;highlightedTripId=null;section=4
             guidedApplication = false
             applicationStep = 0
@@ -150,7 +148,6 @@ private fun checklistLabel(onFile: Int, requiredTotal: Int, applicationStatus: S
             showPayoutDetails = false
             statementPeriod = StatementPeriod.All
             supportReturnSection = 4
-            payoutPhone = ""
             entry = DriverEntry.Welcome
         }
         previouslySignedIn=state.signedIn
@@ -737,49 +734,12 @@ private fun checklistLabel(onFile: Int, requiredTotal: Int, applicationStatus: S
     }
     val payoutStatement = state.earnings
     if (section == 1 && showPayoutDetails && payoutStatement != null) {
-        val destination = payoutStatement.getJSONObject("destination")
-        val status = destination.getString("status")
-        val masked = (payoutStatement.opt("destinationMasked") as? String)?.takeIf { it.isNotBlank() }
-        AlertDialog(
-            onDismissRequest = { showPayoutDetails = false },
-            title = { Text("M-Pesa payouts") },
-            text = {
-                Column(
-                    Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(MireliDesign.Space.xs),
-                ) {
-                    DepartureValueRow("Payout number", masked ?: "Not set")
-                    DepartureValueRow("Beneficiary", status.readableStatus())
-                    (destination.opt("reviewNote") as? String)?.takeIf { it.isNotBlank() }?.let { DepartureNote(it) }
-                    state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                    if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-                    if (status in listOf("not_configured", "rejected") && !payoutStatement.optBoolean("payoutDestinationPhoneEditable")) {
-                        DepartureNote("Payout number updates are unavailable. Contact support for help.")
-                    } else if (status in listOf("not_configured", "rejected")) {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            DepartureNote("Finance checks your account name and identity evidence before approving your M-Pesa number.")
-                            TextField(payoutName, { payoutName = it.take(100) }, Modifier.fillMaxWidth(),
-                                label = { Text("Name on your M-Pesa account") }, singleLine = true,
-                                enabled = !state.loading, colors = departureFieldColors())
-                            TextField(payoutPhone, { payoutPhone = it.take(20) }, Modifier.fillMaxWidth(),
-                                label = { Text("M-Pesa number (07XX… or 2547XX…)") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                                singleLine = true, enabled = !state.loading, colors = departureFieldColors())
-                            Row(Modifier.fillMaxWidth().toggleable(payoutAcknowledged, enabled = !state.loading,
-                                role = Role.Checkbox, onValueChange = { payoutAcknowledged = it }),
-                                verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(payoutAcknowledged, null)
-                                Text("This M-Pesa number and account name are mine.")
-                            }
-                            DepartureButton(onClick = { vm.payoutDestination(payoutName, payoutPhone) },
-                                enabled = !state.loading && payoutAcknowledged && payoutName.trim().length >= 3 &&
-                                    OnboardingPolicy.normalizePhone(payoutPhone) != null,
-                                modifier = Modifier.fillMaxWidth()) { Text("Request beneficiary review") }
-                        }
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { showPayoutDetails = false }) { Text("Done") } },
+        PayoutDestinationDialog(
+            statement = payoutStatement,
+            loading = state.loading,
+            error = state.error,
+            onSave = vm::payoutDestination,
+            onDismiss = { showPayoutDetails = false },
         )
     }
     navTarget?.let{ target->

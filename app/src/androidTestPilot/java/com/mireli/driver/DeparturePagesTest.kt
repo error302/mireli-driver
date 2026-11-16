@@ -19,6 +19,7 @@ import com.mireli.driver.ui.DriverIdentity
 import com.mireli.driver.ui.DriverHomeDashboard
 import com.mireli.driver.ui.DriverHomeTopBar
 import com.mireli.driver.ui.DriverSignInScreen
+import com.mireli.driver.ui.PayoutDestinationDialog
 import com.mireli.driver.ui.driverSupportItems
 import com.mireli.driver.data.SupportDraft
 import com.mireli.driver.ui.MireliTheme
@@ -29,6 +30,29 @@ import org.junit.Test
 
 class DeparturePagesTest {
     @get:Rule val rule = createComposeRule()
+
+    @Test fun approvedBeneficiaryCanRequestAReplacementNumber() {
+        val statement = JSONObject("""{
+            "destination":{"status":"approved","version":7,"accountName":"Pilot Driver"},
+            "destinationMasked":"••••1234","payoutDestinationPhoneEditable":true
+        }""")
+        var submitted: Triple<String, String, Int>? = null
+        rule.setContent {
+            MireliTheme {
+                PayoutDestinationDialog(statement, false, null, { name, phone, version, saved ->
+                    submitted = Triple(name, phone, version)
+                    saved()
+                }, {})
+            }
+        }
+        rule.onNodeWithText("Edit payout details").performScrollTo().performClick()
+        rule.onNode(hasText("M-Pesa mobile number")).performScrollTo().performTextInput("0712345678")
+        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        rule.onNodeWithText("Submit for review").performScrollTo().assertIsNotEnabled()
+        rule.onNodeWithText("I own this M-Pesa account.").performScrollTo().performClick()
+        rule.onNodeWithText("Submit for review").performScrollTo().assertIsEnabled().performClick()
+        assertEquals(Triple("Pilot Driver", "0712345678", 7), submitted)
+    }
 
     @Test fun signInShowsAppearanceBesideSupport() {
         rule.setContent {
