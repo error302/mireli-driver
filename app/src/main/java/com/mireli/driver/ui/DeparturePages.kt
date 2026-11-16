@@ -178,10 +178,12 @@ internal fun DepartureSettlement(line: JSONObject, hideBalance: Boolean, modifie
         },
     ) {
         Column {
-            DepartureValueRow("Gross", shown("grossMinor"))
-            DepartureValueRow("Commission", shown("commissionMinor"))
-            DepartureValueRow("Home surcharge", shown("surchargeMinor"))
-            if (line.optLong("platformFeeMinor") != 0L) DepartureValueRow("Platform fee", shown("platformFeeMinor"))
+            DepartureValueRow("Gross fare", shown("grossMinor"))
+            if (line.optLong("surchargeMinor") != 0L) DepartureNote("Gross includes ${shown("surchargeMinor")} for home pickup.")
+            DepartureValueRow("Less commission", shown("commissionMinor"))
+            val platformFee = if (hideBalance) "KSh ••••" else money(line.optLong("platformFeeMinor"))
+            DepartureValueRow("Less platform fee", platformFee)
+            DepartureValueRow("Net payout", shown("netMinor"))
             line.optString("failureReason").takeIf { it.isNotBlank() && it != "null" }?.let { DepartureNote(it) }
         }
     }
@@ -189,7 +191,12 @@ internal fun DepartureSettlement(line: JSONObject, hideBalance: Boolean, modifie
 
 internal fun String.readableStatus(): String = replace('_', ' ').replaceFirstChar { it.uppercaseChar() }
 
-internal fun String.settlementLabel(): String = if (this == "completed") "Paid" else readableStatus()
+internal fun String.settlementLabel(): String = when (this) {
+    "completed" -> "Paid"
+    "queued", "processing" -> "Pending"
+    "ambiguous", "needs_review" -> "Needs review"
+    else -> readableStatus()
+}
 
 @Composable
 internal fun departureFieldColors() = TextFieldDefaults.colors(

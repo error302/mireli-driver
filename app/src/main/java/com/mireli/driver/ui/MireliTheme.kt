@@ -112,7 +112,8 @@ private val LocalAppearance=staticCompositionLocalOf<Appearance>{error("MireliTh
     val appearance=LocalAppearance.current
     val dark=when(appearance.mode){ThemeMode.SYSTEM->isSystemInDarkTheme();ThemeMode.DARK->true;ThemeMode.LIGHT->false}
     IconButton(onClick={appearance.select(if(dark)ThemeMode.LIGHT else ThemeMode.DARK)},enabled=!appearance.saving,modifier=modifier) {
-        Icon(if(dark)MireliIcons.Sun else MireliIcons.Moon,"Dark mode",tint=if(appearance.saving)tint.copy(alpha=.4f) else tint)
+        Icon(if(dark)MireliIcons.Sun else MireliIcons.Moon,if(dark) "Switch to light mode" else "Switch to dark mode",
+            tint=if(appearance.saving)tint.copy(alpha=.4f) else tint)
     }
 }
 

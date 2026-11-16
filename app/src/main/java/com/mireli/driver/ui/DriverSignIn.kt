@@ -88,6 +88,7 @@ fun DriverSignInScreen(
             Spacer(Modifier.width(8.dp))
             Text("Mireli Driver", Modifier.weight(1f),
                 style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            ThemeIconButton(tint = MaterialTheme.colorScheme.secondary)
             IconButton(onClick = onSupport) {
                 Icon(MireliIcons.HeadsetMic, "Help and support", tint = MaterialTheme.colorScheme.secondary)
             }
@@ -212,7 +213,6 @@ fun DriverSignInScreen(
                         Text("Register to drive", color = MaterialTheme.colorScheme.secondary)
                     }
                 }
-                AppearanceToggle(showSettings = true)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
                     listOf("Privacy" to "privacy", "Terms" to "terms").forEach { (label, path) ->
                         TextButton(onClick = {

@@ -206,7 +206,7 @@ internal val VerifiedBlue = Color(0xFF1D7AF3)
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Mireli Driver stores your profile and vehicle details, the documents you upload for verification, your assignments, and your settlement statement. Documents live in Mireli's private review service and are used only to verify you — never shown to passengers or the public.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("Your device position is used only while the app is open and is sent to Mireli's routing service only when you ask for directions. There is no background tracking between trips.",
+            Text("Directions use your device location. When live trip sharing is available and enabled during an active trip, Mireli Driver can send your location while the app is in the background. The trip-sharing notification lets you stop sharing.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("You can request deletion of your account from Account → Request account deletion, or write to $supportEmail. Completed applications are reviewed within one day of enrollment.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

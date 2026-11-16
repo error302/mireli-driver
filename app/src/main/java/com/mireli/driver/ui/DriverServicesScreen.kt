@@ -33,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.font.FontWeight
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -81,7 +82,6 @@ private fun checklistLabel(onFile: Int, requiredTotal: Int, applicationStatus: S
     var entry by rememberSaveable { mutableStateOf(DriverEntry.Welcome) }
     var email by rememberSaveable {mutableStateOf("")};var code by remember {mutableStateOf("")}
     var section by rememberSaveable {mutableIntStateOf(4)};var accepted by rememberSaveable {mutableStateOf(false)}
-    var supportCategory by rememberSaveable {mutableStateOf("trip")};var supportMessage by remember {mutableStateOf("")}
     var payoutName by remember {mutableStateOf("")};var payoutAcknowledged by remember {mutableStateOf(false)}
     var payoutPhone by rememberSaveable {mutableStateOf("")}
     var tripHistory by rememberSaveable {mutableStateOf(false)}
@@ -112,7 +112,22 @@ private fun checklistLabel(onFile: Int, requiredTotal: Int, applicationStatus: S
     var removeDocumentId by rememberSaveable { mutableStateOf<String?>(null) }
     var showPayoutDetails by rememberSaveable { mutableStateOf(false) }
     var statementPeriod by rememberSaveable { mutableStateOf(StatementPeriod.All) }
-    var supportFromEarnings by rememberSaveable { mutableStateOf(false) }
+    var supportReturnSection by rememberSaveable { mutableIntStateOf(4) }
+    val closeSupport = { section = supportReturnSection }
+    fun openSupport(category: String? = null, message: String? = null) {
+        supportReturnSection = section
+        if (category != null && state.supportDraft.message.isBlank()) {
+            vm.editSupportDraft(category, message ?: state.supportDraft.message)
+        }
+        section = 2
+    }
+    BackHandler(enabled = state.signedIn && section == 2) { closeSupport() }
+    LaunchedEffect(state.signedIn, section) {
+        if (state.signedIn && section in listOf(1, 2)) {
+            vm.state.first { !it.loading }
+            if (section == 2) vm.refreshSupport() else vm.refreshEarnings()
+        }
+    }
     var previouslySignedIn by remember {mutableStateOf(false)}
     LaunchedEffect(state.signedIn) {
         if (state.signedIn) {
@@ -127,14 +142,14 @@ private fun checklistLabel(onFile: Int, requiredTotal: Int, applicationStatus: S
             entry = DriverEntry.Welcome
         }
         if(previouslySignedIn && !state.signedIn) {
-            email="";code="";supportMessage="";payoutName="";payoutAcknowledged=false
-            supportCategory="trip";accepted=false;selectedType=null;selectedExpiry="";selectedFile=null;removeDocumentId=null;tripHistory=false;highlightedTripId=null;section=4
+            email="";code="";payoutName="";payoutAcknowledged=false
+            accepted=false;selectedType=null;selectedExpiry="";selectedFile=null;removeDocumentId=null;tripHistory=false;highlightedTripId=null;section=4
             guidedApplication = false
             applicationStep = 0
             expandedDocumentGroup = null
             showPayoutDetails = false
             statementPeriod = StatementPeriod.All
-            supportFromEarnings = false
+            supportReturnSection = 4
             payoutPhone = ""
             entry = DriverEntry.Welcome
         }
@@ -157,7 +172,7 @@ private fun checklistLabel(onFile: Int, requiredTotal: Int, applicationStatus: S
             listState.scrollToItem(0)
         }
     }
-    LaunchedEffect(state.supportSent){if(state.supportSent>0){supportMessage="";focus.clearFocus();keyboard?.hide()}}
+    LaunchedEffect(state.supportSent){if(state.supportSent>0){focus.clearFocus();keyboard?.hide()}}
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (selectedType != null && uri != null) selectedFile = uri
         else selectedType = null
@@ -271,9 +286,9 @@ private fun checklistLabel(onFile: Int, requiredTotal: Int, applicationStatus: S
             ?.filter { it.optString("phase") in listOf("accepted", "at_pickup", "in_progress") }
             ?.minWithOrNull(transferOrder())
     }
-    androidx.compose.runtime.LaunchedEffect(trackingTrip?.optString("id")) {
+    androidx.compose.runtime.LaunchedEffect(trackingTrip?.optString("id"), state.trackingOpen) {
         val id = trackingTrip?.optString("id")?.takeIf { it.isNotBlank() }
-        if (id == null) {
+        if (id == null || !state.trackingOpen) {
             com.mireli.driver.service.TripTracking.stop(trackingContext)
         } else if (androidx.core.content.ContextCompat.checkSelfPermission(
                 trackingContext, android.Manifest.permission.ACCESS_FINE_LOCATION
@@ -350,7 +365,7 @@ private fun checklistLabel(onFile: Int, requiredTotal: Int, applicationStatus: S
             modifier = Modifier.fillMaxSize().padding(padding),
         ) {
         LazyColumn(Modifier.fillMaxSize().imePadding().testTag("driver_service_list"),state=listState,contentPadding=PaddingValues(start=MireliDesign.Space.md,end=MireliDesign.Space.md,top=MireliDesign.Space.md,bottom=MireliDesign.Space.md + 24.dp),verticalArrangement=Arrangement.spacedBy(if (guidedApplication) MireliDesign.Space.md else MireliDesign.Space.sm)) {
-            if(section==4)item { DriverHomeTopBar(onSupport = { section = 2 }) }
+            if(section==4)item { DriverHomeTopBar(onSupport = { openSupport() }) }
             if (guidedApplication) item {
                 DeparturePageTitle("Driver application",
                     if (editingApplication) "Step ${applicationStep + 1} of 3" else null)
@@ -373,10 +388,14 @@ private fun checklistLabel(onFile: Int, requiredTotal: Int, applicationStatus: S
             }
             if(section==2)item {
                 DeparturePageTitle("Driver support", "For emergencies, contact local emergency services directly.")
-                TextButton(onClick = {
-                    section = if (supportFromEarnings) 1 else 0
-                    supportFromEarnings = false
-                }) { Text(if (supportFromEarnings) "Back to earnings" else "Back to account") }
+                TextButton(onClick = closeSupport) {
+                    Text(when (supportReturnSection) {
+                        0 -> "Back to account"
+                        1 -> "Back to earnings"
+                        3 -> "Back to trips"
+                        else -> "Back to home"
+                    })
+                }
             }
             if(onClose!=null)item {TextButton(onClick=onClose){Text("Back to preview")}}
             if(BuildConfig.DRIVER_SERVICE_TEST)item {Card {Text("STAGING · Simulated sign-in and payouts",Modifier.padding(16.dp))}}
@@ -563,8 +582,10 @@ private fun checklistLabel(onFile: Int, requiredTotal: Int, applicationStatus: S
                         val cursor = statement.opt("nextCursor") as? String
                         val allTime = statementPeriod == StatementPeriod.All
                         val lines = allLines.filter { statementPeriod.includes(it, statementNow) }
-                        val periodComplete = allTime || cursor == null
-                        val totals = if (allTime) statement.getJSONArray("totals").objects() else lines
+                        val periodTotals = statement.optJSONObject("periodTotals")
+                            ?.optJSONArray(statementPeriod.name.lowercase())?.objects()
+                        val periodComplete = allTime || periodTotals != null || cursor == null
+                        val totals = if (allTime) statement.getJSONArray("totals").objects() else periodTotals ?: lines
                         val paid = totals.filter { it.getString("status") == "completed" }.sumOf { it.getLong("netMinor") }
                         item {
                             EarningsOverview(
@@ -587,26 +608,23 @@ private fun checklistLabel(onFile: Int, requiredTotal: Int, applicationStatus: S
                                         else -> "M-Pesa · ${status.readableStatus()}"
                                     }
                                 },
-                                onPayoutSupport = {
-                                    supportCategory = "payout"
-                                    supportFromEarnings = true
-                                    section = 2
-                                },
+                                onPayoutSupport = { openSupport("payout") },
                             )
                         }
                         val pendingTotals = totals.filterNot { it.getString("status") == "completed" }
-                            .groupBy { it.getString("status") }
+                            .groupBy { it.getString("status").settlementLabel() }
                         if (periodComplete && pendingTotals.isNotEmpty()) item {
                             Column(verticalArrangement = Arrangement.spacedBy(MireliDesign.Space.xs)) {
                                 DepartureSection("Unsettled earnings")
                                 pendingTotals.forEach { (status, rows) ->
-                                    DepartureValueRow(status.settlementLabel(), shown(rows.sumOf { it.getLong("netMinor") }))
+                                    DepartureValueRow(status, shown(rows.sumOf { it.getLong("netMinor") }))
                                 }
                             }
                         }
                         item {
                             DepartureSection("Settlements")
-                            if (lines.isEmpty() && periodComplete) DepartureNote("No settlements for this period.")
+                            activityTimestamp(statement.optString("serverTime"))?.let { DepartureNote("Updated $it") }
+                            if (lines.isEmpty() && periodComplete && totals.isEmpty()) DepartureNote("No settlements for this period.")
                             if (!periodComplete) DepartureNote("Load earlier settlements to see the full period totals.")
                         }
                         itemsIndexed(lines, key = { _, line -> line.getString("id") }) { index, line ->
@@ -620,7 +638,7 @@ private fun checklistLabel(onFile: Int, requiredTotal: Int, applicationStatus: S
                     }
                     if (state.earnings == null) item {
                         DepartureNote(if (state.loading) "Loading your statement…" else "Refresh to load your statement.")
-                        if (!state.loading) TextButton(onClick = vm::refresh) { Text("Refresh earnings") }
+                        if (!state.loading) TextButton(onClick = vm::refreshEarnings) { Text("Refresh earnings") }
                     }
                 }else if(section==3) {
                     val allTrips=state.trips?.getJSONArray("trips")?.objects()?:emptyList()
@@ -645,6 +663,7 @@ private fun checklistLabel(onFile: Int, requiredTotal: Int, applicationStatus: S
                                 onPickupSearch = if (state.destinationSearchOpen) vm::searchDestinations else null,
                                 onPickupRoute = if (state.destinationSearchOpen) vm::destinationRoute else null,
                             )
+                            TextButton(onClick = { openSupport("trip") }) { Text("Get trip help") }
                         }
                     }
                     if (!tripHistory && !eligible && visibleTrips.isNotEmpty() && state.tripDataCurrent) item {
@@ -686,16 +705,7 @@ private fun checklistLabel(onFile: Int, requiredTotal: Int, applicationStatus: S
                         }
                     }
                 }else if(section==2) {
-                    if(state.supportSent>0)item {Text("Support case sent. Mireli's replies appear below.",color=MaterialTheme.colorScheme.primary)}
-                    item {FlowRow(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){listOf("trip","account","documents","payout","safety").forEach{category->FilterChip(selected=supportCategory==category,onClick={supportCategory=category},label={Text(category.replaceFirstChar{it.uppercase()})})}}}
-                    item {TextField(supportMessage,{supportMessage=it.take(2000)},label={Text("How can we help?")},modifier=Modifier.fillMaxWidth(),minLines=3,enabled=!state.loading,colors=departureFieldColors())}
-                    item {DepartureButton(onClick={vm.support(supportCategory,supportMessage)},enabled=!state.loading&&supportMessage.trim().length>=10,modifier=Modifier.fillMaxWidth()){Text("Send support case")}}
-                    item {Text("Keep ID numbers and document images out of support messages. Use the private document upload flow.",style=MaterialTheme.typography.bodySmall)}
-                    items(state.support?.getJSONArray("cases")?.objects()?:emptyList(),key={it.getString("id")}){case->Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(6.dp)) {
-                        HorizontalDivider()
-                        Text("${case.getString("category").readableStatus()} · ${case.getString("status").readableStatus()}",style=MaterialTheme.typography.titleMedium);Text("Reference: ${case.getString("id")}",style=MaterialTheme.typography.bodySmall);Text(case.getString("message"))
-                        case.optString("reply").takeIf{it.isNotBlank()&&it!="null"}?.let{Text("Mireli: $it")}
-                    }}
+                    driverSupportItems(state, vm::editSupportDraft, vm::sendSupport, vm::refreshSupport)
                 }
                 if (guidedApplication && editingApplication) item {
                     Row(horizontalArrangement = Arrangement.spacedBy(MireliDesign.Space.xs)) {
@@ -706,7 +716,7 @@ private fun checklistLabel(onFile: Int, requiredTotal: Int, applicationStatus: S
                 if(section==0 && !guidedApplication)item {
                     Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
                         DepartureSection("Settings")
-                        DriverActionTile("Driver support","",MireliIcons.HeadsetMic) { section=2 }
+                        DriverActionTile("Driver support","",MireliIcons.HeadsetMic) { openSupport() }
                     }
                 }
                 if(section==0 && !guidedApplication)item {
@@ -714,9 +724,7 @@ private fun checklistLabel(onFile: Int, requiredTotal: Int, applicationStatus: S
                         DepartureSection("Privacy")
                         if (onboarding != null) DriverPrivacyNotice(onboarding, state.supportEmail)
                         DriverActionTile("Request account deletion","",MireliIcons.PrivacyTip) {
-                            supportCategory="account"
-                            supportMessage="I am requesting deletion of my Mireli Driver account. Please let me know if you need any further information to handle my request."
-                            section=2
+                            openSupport("account", "I am requesting deletion of my Mireli Driver account. Please let me know if you need any further information to handle my request.")
                         }
                     }
                 }
@@ -745,7 +753,9 @@ private fun checklistLabel(onFile: Int, requiredTotal: Int, applicationStatus: S
                     (destination.opt("reviewNote") as? String)?.takeIf { it.isNotBlank() }?.let { DepartureNote(it) }
                     state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-                    if (status in listOf("not_configured", "rejected")) {
+                    if (status in listOf("not_configured", "rejected") && !payoutStatement.optBoolean("payoutDestinationPhoneEditable")) {
+                        DepartureNote("Payout number updates are unavailable. Contact support for help.")
+                    } else if (status in listOf("not_configured", "rejected")) {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             DepartureNote("Finance checks your account name and identity evidence before approving your M-Pesa number.")
                             TextField(payoutName, { payoutName = it.take(100) }, Modifier.fillMaxWidth(),
@@ -762,7 +772,8 @@ private fun checklistLabel(onFile: Int, requiredTotal: Int, applicationStatus: S
                                 Text("This M-Pesa number and account name are mine.")
                             }
                             DepartureButton(onClick = { vm.payoutDestination(payoutName, payoutPhone) },
-                                enabled = !state.loading && payoutAcknowledged && payoutName.trim().length >= 3,
+                                enabled = !state.loading && payoutAcknowledged && payoutName.trim().length >= 3 &&
+                                    OnboardingPolicy.normalizePhone(payoutPhone) != null,
                                 modifier = Modifier.fillMaxWidth()) { Text("Request beneficiary review") }
                         }
                     }

@@ -486,6 +486,15 @@ internal fun DriverHomeDashboard(
             DepartureNote(renewalNote)
             TextButton(onClick = onOpenAccount) { Text("Renew documents") }
         }
+        if (!tripsCurrent) {
+            val saved = trips.orEmpty().filter { it.isActiveTransfer() }.minWithOrNull(transferOrder())
+            if (saved != null) {
+                DepartureNote("Last confirmed assignment")
+                TextButton(onClick = { onOpenTrip(saved.optString("id")) }) {
+                    Text(saved.optString("routeName").ifBlank { "View saved trip" })
+                }
+            }
+        }
         if (!eligible) {
             if (renewalNote == null) ApplicationPanel(applicationStatus, onOpenAccount, onRefresh)
             SgrTodayPanel(now, schedule, onRefreshTimetable)

@@ -2,6 +2,7 @@ package com.mireli.driver
 import androidx.test.core.app.ApplicationProvider
 import com.mireli.driver.data.DriverSession
 import com.mireli.driver.data.DriverSessionStore
+import com.mireli.driver.data.SupportDraft
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
@@ -10,6 +11,26 @@ import java.io.File
 import java.time.Instant
 import java.util.UUID
 class DriverSessionStoreTest {
+    @Test fun rememberedSessionAndPendingSupportSurviveReloadUntilCleared() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val store = DriverSessionStore(context)
+        val session = DriverSession("SYNTHETIC-${UUID.randomUUID()}", null)
+        val draft = SupportDraft("payout", "Please review my synthetic payout.", UUID.randomUUID().toString())
+        try {
+            store.save(session)
+            store.saveSupportDraft(session, draft)
+            val reopened = DriverSessionStore(context)
+            assertEquals(session, reopened.load())
+            assertEquals(draft, reopened.savedSupportDraft(session))
+            assertEquals(SupportDraft(), reopened.savedSupportDraft(session.copy(token = "different-session")))
+            assertFalse(File(context.noBackupFilesDir, "driver-support-draft.enc").readBytes()
+                .toString(Charsets.UTF_8).contains(draft.message))
+        } finally {
+            store.clear()
+        }
+        assertNull(store.load())
+        assertEquals(SupportDraft(), store.savedSupportDraft(session))
+    }
     @Test fun sessionIsEncryptedAndExpiredSessionsAreNotLoaded(){
         val context=ApplicationProvider.getApplicationContext<Context>();val store=DriverSessionStore(context)
         val token="SYNTHETIC-TOKEN-${UUID.randomUUID()}"

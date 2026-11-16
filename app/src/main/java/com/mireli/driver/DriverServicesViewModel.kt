@@ -24,7 +24,9 @@ data class DocumentUpload(val type: String, val uploading: Boolean = false, val 
 
 data class DriverServiceState(val loading:Boolean=true,val signedIn:Boolean=false,val challengeId:String?=null,
     val demoCode:String?=null,val challengeEmail:String?=null,val onboarding:JSONObject?=null,val earnings:JSONObject?=null,val support:JSONObject?=null,val supportSent:Int=0,val eligibility:JSONObject?=null,val trips:JSONObject?=null,val tripDataCurrent:Boolean=false,val pendingTripAction:Boolean=false,val emailSignInOpen:Boolean?=null,val registrationOpen:Boolean?=null,val navigationOpen:Boolean=false,val serviceMessage:String?=null,val supportEmail:String=DEFAULT_SUPPORT_EMAIL,val resendAt:Long=0,val error:String?=null,
-    val documentUpload: DocumentUpload? = null, val destinationSearchOpen: Boolean = false, val satelliteOpen: Boolean = false)
+    val documentUpload: DocumentUpload? = null, val destinationSearchOpen: Boolean = false, val satelliteOpen: Boolean = false,
+    val trackingOpen: Boolean = false, val supportPhone: String? = null, val supportDraft: SupportDraft = SupportDraft(),
+    val supportError: String? = null)
 internal data class TrainSchedule(
     val services: List<SgrTimetable.Service>? = null,
     val loading: Boolean = false,
@@ -46,7 +48,7 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
     private var driverEntryIntent = false
     private var workGeneration = 0L
     private val tripCacheLock = Mutex()
-    private var supportRequest:Pair<String,String>?=null
+    private val supportDraftLock = Mutex()
     private val mutable=MutableStateFlow(DriverServiceState())
     private val starting = MutableStateFlow(true)
     val startupLoading = starting.asStateFlow()
@@ -120,11 +122,13 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
             }
         }
         val cachedTrip = cached?.first
+        val supportDraft = session?.let { withContext(Dispatchers.IO) { sessions.savedSupportDraft(it) } } ?: SupportDraft()
         driverId = cachedTrip?.optString("driverId")
         mutable.value = DriverServiceState(
             signedIn = session != null,
             trips = cachedTrip?.let { JSONObject().put("trips", JSONArray().put(it.getJSONObject("trip"))).put("cached", true) },
             pendingTripAction = cached?.second == true,
+            supportDraft = supportDraft,
         )
         runWork {
             try {
@@ -169,7 +173,7 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
             throw cancelled
         } catch (error: Exception) {
             mutable.value = mutable.value.copy(emailSignInOpen = null, registrationOpen = null,
-                navigationOpen = false, destinationSearchOpen = false, satelliteOpen = false, serviceMessage = null)
+                navigationOpen = false, destinationSearchOpen = false, satelliteOpen = false, trackingOpen = false, serviceMessage = null)
             throw error
         }
         driverEntryIntent = status.optBoolean("driverEntryIntent")
@@ -181,7 +185,9 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
             destinationSearchOpen = status.opt("destinationSearchOpen") == true,
             satelliteOpen = status.opt("satelliteOpen") == true,
             serviceMessage = status.optString("message").takeIf { it.isNotBlank() && it != "null" },
-            supportEmail = contactEmail ?: DEFAULT_SUPPORT_EMAIL
+            supportEmail = contactEmail ?: DEFAULT_SUPPORT_EMAIL,
+            supportPhone = status.optString("supportPhone").takeIf { it.matches(Regex("^\\+?[0-9]{7,15}$")) },
+            trackingOpen = com.mireli.driver.service.TripBroadcastService.supported(status)
         )
     }
     fun refreshServiceStatus()=work {serviceStatus()}
@@ -198,9 +204,12 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
     }
     fun verifyCode(code:String)=work {
         val challenge=mutable.value.challengeId?:return@work
-        val result=api.request("/auth/sessions","POST",json=JSONObject().put("challengeId",challenge).put("code",code).put("deviceId",withContext(Dispatchers.IO){sessions.deviceId}))
+        val result=api.request("/auth/sessions","POST",json=JSONObject().put("challengeId",challenge).put("code",code)
+            .put("deviceId",withContext(Dispatchers.IO){sessions.deviceId}).put("rememberDevice",true))
         if(result.opt("simulation")!=BuildConfig.DRIVER_SERVICE_TEST)throw DriverServiceException(503,"Service environment does not match this build.")
-        val verifiedSession = DriverSession(result.getString("token"), result.getString("expiresAt"))
+        require(result.has("expiresAt"))
+        val verifiedSession = DriverSession(result.getString("token"),
+            if (result.isNull("expiresAt")) null else result.getString("expiresAt"))
         withContext(Dispatchers.IO) { sessions.save(verifiedSession) }
         session = verifiedSession
         mutable.value=mutable.value.copy(signedIn=true,challengeId=null,demoCode=null)
@@ -226,6 +235,9 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
                     // A failure in one section must leave the others usable. An
                     // authenticated session rejection still takes precedence.
                     val sessionRejected = (error as? DriverServiceException)?.sessionRejected == true
+                    if (path == "/support" && !sessionRejected) {
+                        mutable.value = mutable.value.copy(supportError = "Support cases could not be refreshed.")
+                    }
                     if (sessionRejected || (path != "/trips" && failure == null)) {
                         failure = error
                     }
@@ -233,11 +245,8 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
             }
             loadSection("/trips") { response -> applyAssignments(response, accountId) }
             loadSection("/onboarding") { mutable.value = mutable.value.copy(onboarding = it) }
-            loadSection("/support") { mutable.value = mutable.value.copy(support = it) }
-            loadSection("/earnings") { statement ->
-                require(statement.getString("currency") == "KES" && statement.getString("unit") == "minor")
-                mutable.value = mutable.value.copy(earnings = statement)
-            }
+            loadSection("/support") { mutable.value = mutable.value.copy(support = it, supportError = null) }
+            loadSection("/earnings", ::applyEarnings)
         }
         failure?.let { throw it }
     }
@@ -280,16 +289,84 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
         }
     }
     fun changeEmail(){if(!mutable.value.loading)mutable.value=mutable.value.copy(challengeId=null,challengeEmail=null,demoCode=null,error=null,resendAt=0)}
-    fun support(category:String,message:String)=work {
-        val fingerprint="$category|${message.trim()}"
-        val id=supportRequest?.takeIf{it.first==fingerprint}?.second?:java.util.UUID.randomUUID().toString().also{supportRequest=fingerprint to it}
-        val response=api.request("/support","POST",session?.token,json=JSONObject().put("clientActionId",id).put("category",category).put("message",message.trim()))
-        mutable.value=mutable.value.copy(support=response,supportSent=mutable.value.supportSent+1);supportRequest=null
+    fun editSupportDraft(category: String, message: String) {
+        val activeSession = session ?: return
+        if (mutable.value.supportDraft.requestId != null) return
+        val draft = SupportDraft(category, message.take(2000))
+        mutable.value = mutable.value.copy(supportDraft = draft, supportSent = 0)
+        viewModelScope.launch {
+            try {
+                supportDraftLock.withLock {
+                    if (session === activeSession && mutable.value.supportDraft == draft) {
+                        withContext(Dispatchers.IO) { sessions.saveSupportDraft(activeSession, draft) }
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                if (session === activeSession) {
+                    mutable.value = mutable.value.copy(supportError = "This phone could not save your draft.")
+                }
+            }
+        }
+    }
+
+    fun refreshSupport() = work {
+        val activeSession = session ?: return@work
+        try {
+            val response = api.request("/support", token = activeSession.token)
+            mutable.value = mutable.value.copy(support = response, supportError = null)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            if ((error as? DriverServiceException)?.sessionRejected == true) throw error
+            mutable.value = mutable.value.copy(supportError = "Support cases could not be refreshed.")
+        }
+    }
+
+    fun sendSupport() = work {
+        val activeSession = session ?: return@work
+        val draft = mutable.value.supportDraft
+        val pending = draft.copy(
+            message = draft.message.trim(),
+            requestId = draft.requestId ?: java.util.UUID.randomUUID().toString(),
+        )
+        supportDraftLock.withLock {
+            withContext(Dispatchers.IO) { sessions.saveSupportDraft(activeSession, pending) }
+        }
+        mutable.value = mutable.value.copy(supportDraft = pending, supportSent = 0)
+        val response = try {
+            api.request("/support", "POST", activeSession.token, json = JSONObject()
+                .put("clientActionId", pending.requestId).put("category", pending.category).put("message", pending.message))
+        } catch (error: DriverServiceException) {
+            // A rejected request can be edited. A retry after a network or server
+            // failure must reuse the saved ID because the case may already exist.
+            if (error.status == 400) {
+                supportDraftLock.withLock {
+                    withContext(Dispatchers.IO) { sessions.saveSupportDraft(activeSession, draft.copy(requestId = null)) }
+                }
+                mutable.value = mutable.value.copy(supportDraft = draft.copy(requestId = null))
+            }
+            throw error
+        }
+        supportDraftLock.withLock {
+            withContext(Dispatchers.IO) { sessions.saveSupportDraft(activeSession, SupportDraft()) }
+        }
+        mutable.value = mutable.value.copy(support = response, supportDraft = SupportDraft(), supportSent = 1, supportError = null)
     }
     fun refresh()=work {
         mutable.value = mutable.value.copy(tripDataCurrent = false)
         serviceStatus()
         loadAccount()
+    }
+    private fun applyEarnings(statement: JSONObject) {
+        require(statement.getString("currency") == "KES" && statement.getString("unit") == "minor")
+        mutable.value = mutable.value.copy(earnings = statement)
+    }
+
+    fun refreshEarnings() = work {
+        val activeSession = session ?: return@work
+        applyEarnings(api.request("/earnings", token = activeSession.token))
     }
     fun loadEarlierEarnings() = work {
         val statement = mutable.value.earnings ?: return@work
@@ -305,15 +382,24 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
                 if (seen.add(line.getString("id"))) combined.put(line)
             }
         }
-        mutable.value = mutable.value.copy(earnings = page.put("lines", combined))
+        val merged = JSONObject(statement.toString())
+            .put("lines", combined).put("nextCursor", page.opt("nextCursor") ?: JSONObject.NULL)
+        mutable.value = mutable.value.copy(earnings = merged)
     }
 
     fun payoutDestination(name:String,mpesaNumber:String="")=work {
+        if (mutable.value.earnings?.optBoolean("payoutDestinationPhoneEditable") != true) {
+            throw DriverServiceException(503, "Payout number updates are unavailable. Contact support for help.")
+        }
         val version=mutable.value.earnings?.getJSONObject("destination")?.getInt("version")?:return@work
         val body=JSONObject().put("expectedVersion",version).put("accountName",name.trim()).put("acknowledged",true)
         // Sent only when the driver attached a number. Older services ignore the field;
         // Daraja-ready services persist it as the disbursement destination.
-        com.mireli.driver.domain.OnboardingPolicy.normalizePhone(mpesaNumber)?.let{body.put("phoneNumber",it)}
+        if (mpesaNumber.isNotBlank()) {
+            val phone = com.mireli.driver.domain.OnboardingPolicy.normalizePhone(mpesaNumber)
+                ?: throw DriverServiceException(400, "Use a Kenyan mobile number.")
+            body.put("phoneNumber", phone)
+        }
         api.request("/payout-destination","POST",session?.token,json=body)
         loadAccount()
     }
@@ -474,29 +560,34 @@ class DriverServicesViewModel(application:Application):AndroidViewModel(applicat
         mutable.value=mutable.value.copy(onboarding=updated);loadAccount()
     }
     fun signOut()=work {
-        val token=session?.token
+        val activeSession = session ?: return@work
         var revoked=true
         try {
-            if (token != null) api.request("/auth/session", "DELETE", token)
+            api.request("/auth/session", "DELETE", activeSession.token)
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (_: Exception) {
-            revoked = false
+        } catch (error: Exception) {
+            revoked = (error as? DriverServiceException)?.sessionRejected == true
+            if (!revoked && activeSession.expiresAt == null) {
+                throw DriverServiceException(503, "Could not sign out securely. Check your connection and try again.")
+            }
         }
         clearSession(if (revoked) null else "Signed out on this phone. Server revocation could not be confirmed; the session still has its expiry limit.")
     }
     private suspend fun clearSession(message: String?) {
         session = null
-        tripCacheLock.withLock { withContext(Dispatchers.IO) { sessions.clear() } }
+        supportDraftLock.withLock {
+            tripCacheLock.withLock { withContext(Dispatchers.IO) { sessions.clear() } }
+        }
         photo.value = DriverPhoto()
         driverId = null
-        supportRequest = null
         val previous = mutable.value
         mutable.value = DriverServiceState(
             emailSignInOpen = previous.emailSignInOpen,
             registrationOpen = previous.registrationOpen,
             serviceMessage = previous.serviceMessage,
             supportEmail = previous.supportEmail,
+            supportPhone = previous.supportPhone,
             error = message
         )
     }

@@ -58,18 +58,13 @@ class FreshPilotTest {
         }
         rule.onAllNodesWithText("PREVIEW",substring=true).assertCountEquals(0)
         capture("fresh-signin-light")
-        fun chooseAppearance(label: String) {
-            rule.onNode(hasScrollAction()).performScrollToNode(hasText("Appearance"))
-            rule.onNodeWithText("Appearance").performClick()
-            rule.onNodeWithText(label).performClick()
-            rule.onNodeWithText("Done").performClick()
-        }
-        chooseAppearance("Dark")
+        rule.onNodeWithContentDescription("Help and support").assertIsDisplayed()
+        rule.onNodeWithContentDescription("Switch to dark mode").assertIsDisplayed().performClick()
         rule.waitUntil(10000){rule.onAllNodesWithTag("theme_dark").fetchSemanticsNodes().isNotEmpty()}
         rule.activityRule.scenario.recreate()
         rule.onNodeWithTag("theme_dark").assertExists();assertEquals(ThemeMode.DARK,ThemePreference(rule.activity).mode)
         capture("fresh-signin-dark")
-        chooseAppearance("Light")
+        rule.onNodeWithContentDescription("Switch to light mode").performClick()
         rule.waitUntil(10000){rule.onAllNodesWithTag("theme_light").fetchSemanticsNodes().isNotEmpty()}
     }
 }

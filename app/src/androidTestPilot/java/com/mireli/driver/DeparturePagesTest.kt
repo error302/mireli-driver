@@ -2,6 +2,7 @@ package com.mireli.driver
 
 import android.net.Uri
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.*
@@ -14,6 +15,9 @@ import com.mireli.driver.ui.DocumentSelectionDialog
 import com.mireli.driver.ui.DriverIdentity
 import com.mireli.driver.ui.DriverHomeDashboard
 import com.mireli.driver.ui.DriverHomeTopBar
+import com.mireli.driver.ui.DriverSignInScreen
+import com.mireli.driver.ui.driverSupportItems
+import com.mireli.driver.data.SupportDraft
 import com.mireli.driver.ui.MireliTheme
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -22,6 +26,39 @@ import org.junit.Test
 
 class DeparturePagesTest {
     @get:Rule val rule = createComposeRule()
+
+    @Test fun signInShowsAppearanceBesideSupport() {
+        rule.setContent {
+            MireliTheme {
+                DriverSignInScreen(
+                    state = DriverServiceState(loading = false, emailSignInOpen = true),
+                    email = "", onEmailChange = {}, code = "", onCodeChange = {},
+                    onRequestCode = {}, onVerifyCode = {}, onChangeEmail = {}, onRetry = {},
+                    resendInSeconds = 0, onBackToWelcome = {},
+                )
+            }
+        }
+        rule.onNodeWithContentDescription("Help and support").assertIsDisplayed()
+        rule.onNode(hasContentDescription("Switch to dark mode") or hasContentDescription("Switch to light mode"))
+            .assertIsDisplayed()
+        rule.onNodeWithText("Appearance").assertDoesNotExist()
+    }
+
+    @Test fun supportShowsRetryForUnconfirmedDeliveryAndKeepsTheDraft() {
+        var retried = false
+        val message = "Please review my synthetic payout."
+        val state = DriverServiceState(loading = false, supportDraft = SupportDraft("payout", message, "test-request"),
+            supportError = "Support cases could not be refreshed.")
+        rule.setContent {
+            MireliTheme {
+                LazyColumn { driverSupportItems(state, { _, _ -> error("Pending draft must stay fixed") }, { retried = true }, {}) }
+            }
+        }
+        rule.onNode(hasText(message)).assertExists()
+        rule.onNode(hasScrollAction()).performScrollToNode(hasText("Retry sending"))
+        rule.onNodeWithText("Retry sending").performClick()
+        assertEquals(true, retried)
+    }
 
     @Test fun applicantsCanOpenTheLiveMapBeforeApproval() {
         var opened = false
@@ -136,7 +173,7 @@ class DeparturePagesTest {
         rule.setContent { MireliTheme { Surface { Column { DepartureSettlement(line, hidden.value) } } } }
         rule.onNodeWithText("Paid").assertIsDisplayed()
         rule.onNodeWithText("M-Pesa settlement").performClick()
-        rule.onNodeWithText("Gross").assertIsDisplayed()
+        rule.onNodeWithText("Gross fare").assertIsDisplayed()
         rule.runOnIdle { hidden.value = true }
         rule.onAllNodesWithText("KSh ••••").assertCountEquals(4)
     }
